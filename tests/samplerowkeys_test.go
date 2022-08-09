@@ -35,7 +35,7 @@ func TestSampleRowKeys_Basic_NoEmptyKey(t *testing.T) {
 	req := testproxypb.SampleRowKeysRequest{
 		ClientId: "TestSampleRowKeys_Basic_NoEmptyKey",
 		Request: &btpb.SampleRowKeysRequest{
-			TableName: tableName,
+			TableName: buildTableName("table"),
 		},
 	}
 

@@ -23,10 +23,11 @@ import (
 )
 
 // dummyCheckAndMutateRowRequest returns a dummy CheckAndMutateRowRequest. For simplicity,
-// PredicateFilter is not set, and either TrueMutations or FalseMutations is set (not both).
-func dummyCheckAndMutateRowRequest(predicateMatched bool, numMutations int) *btpb.CheckAndMutateRowRequest {
+// rowkey is hard-coded, predicateFilter is not set, and either TrueMutations or FalseMutations
+// can be set (but not both).
+func dummyCheckAndMutateRowRequest(tableID string, predicateMatched bool, numMutations int) *btpb.CheckAndMutateRowRequest {
 	req := &btpb.CheckAndMutateRowRequest{
-		TableName:      tableName,
+		TableName:      buildTableName(tableID),
 		RowKey:         []byte("row-01"),
 		TrueMutations:  []*btpb.Mutation{},
 		FalseMutations: []*btpb.Mutation{},
@@ -61,7 +62,7 @@ func TestCheckAndMutateRow_Basic_TrueMutations(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
 		ClientId: "TestCheckAndMutateRow_Basic_TrueMutations",
-		Request:  dummyCheckAndMutateRowRequest(predicateMatched, 2),
+		Request:  dummyCheckAndMutateRowRequest("table", predicateMatched, 2),
 	}
 
 	// 3. Conduct the test
@@ -88,7 +89,7 @@ func TestCheckAndMutateRow_Basic_FalseMutations(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
 		ClientId: "TestCheckAndMutateRow_Basic_FalseMutations",
-		Request:  dummyCheckAndMutateRowRequest(predicateMatched, 2),
+		Request:  dummyCheckAndMutateRowRequest("table", predicateMatched, 2),
 	}
 
 	// 3. Conduct the test

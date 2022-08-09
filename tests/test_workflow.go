@@ -16,6 +16,7 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/golang/protobuf/ptypes/empty"
@@ -24,13 +25,17 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-// Constants for CBT server and resources. tableName is used by *_test.go files.
+// Constants for CBT server and resources
 const (
 	mockServerAddr = "localhost:0"
 	projectID      = "project"
 	instanceID     = "instance"
-	tableName      = "projects/project/instances/instance/tables/table"
 )
+
+// buildTableName returns a full table name using the given `tableID`.
+func buildTableName(tableID string) string {
+	return fmt.Sprintf("projects/%s/instances/%s/tables/%s", projectID, instanceID, tableID)
+}
 
 // createCbtClient creates a CBT client in the test proxy. The client is given an ID `clientID`, and
 // it will target the given server `serverAddr` with custom timeout setting `timeout`. Any failure

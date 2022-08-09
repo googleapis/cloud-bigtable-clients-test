@@ -20,23 +20,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-// buildSimpleEntries builds and returns a simple instance of entryData type.
-// The result indicates that all the rows with `mutatedRowIndices` are mutated successfully,
+// buildEntryData returns an instance of entryData type based on the mutated and failed rows.
+// Row indices are used: all the rows with `mutatedRowIndices` are mutated successfully;
 // and all the rows with `failedRowIndices` have failures with `errorCode`.
 // The function will check if non-OK `errorCode` is passed in when there are failed rows.
-func buildSimpleEntries(mutatedRowIndices []int, failedRowIndices []int, errorCode codes.Code) entryData {
+func buildEntryData(mutatedRowIndices []int, failedRowIndices []int, errorCode codes.Code) entryData {
 	result := entryData{}
-
 	if len(mutatedRowIndices) > 0 {
 		result.mutatedRows = mutatedRowIndices
 	}
@@ -46,21 +46,18 @@ func buildSimpleEntries(mutatedRowIndices []int, failedRowIndices []int, errorCo
 		}
 		result.failedRows = map[codes.Code][]int{errorCode: failedRowIndices}
 	}
-
 	return result
 }
 
-// dummyMutateRowsRequestCore returns a dummy MutateRowsRequest for the given rowkeys and values.
-// For simplicity, only one "SetCell" mutation is used for each row; family & column names and
-// timestamp are fixed.
-func dummyMutateRowsRequestCore(rowKeys []string, values []string) *btpb.MutateRowsRequest {
-	if len(rowKeys) != len(values) {
-		log.Fatal("rowKeys and values should have the same length")
+// dummyMutateRowsRequestCore returns a dummy MutateRowsRequest for the given table and rowkeys.
+// For simplicity, only one "SetCell" mutation is used for each row; family & column names, values,
+// and timestamps are hard-coded.
+func dummyMutateRowsRequestCore(tableID string, rowKeys []string) *btpb.MutateRowsRequest {
+	req := &btpb.MutateRowsRequest{
+		TableName: buildTableName(tableID),
+		Entries: []*btpb.MutateRowsRequest_Entry{},
 	}
-	numOfRows := len(rowKeys)
-
-	req := &btpb.MutateRowsRequest{TableName: tableName, Entries: []*btpb.MutateRowsRequest_Entry{}}
-	for i := 0; i < numOfRows; i++ {
+	for i := 0; i < len(rowKeys); i++ {
 		entry := &btpb.MutateRowsRequest_Entry{
 			RowKey: []byte(rowKeys[i]),
 			Mutations: []*btpb.Mutation{
@@ -69,34 +66,32 @@ func dummyMutateRowsRequestCore(rowKeys []string, values []string) *btpb.MutateR
 						FamilyName:      "f",
 						ColumnQualifier: []byte("col"),
 						TimestampMicros: 1000,
-						Value:           []byte(values[i]),
+						Value:           []byte("value"),
 					},
 				}},
 			},
 		}
 		req.Entries = append(req.Entries, entry)
 	}
-
 	return req
 }
 
-// dummyMutateRowsRequest returns a dummy MutateRowsRequest for the given number of rows.
+// dummyMutateRowsRequest returns a dummy MutateRowsRequest for the given table and row count.
 // rowkeys and values are generated with the row indices.
-func dummyMutateRowsRequest(numOfRows int) *btpb.MutateRowsRequest {
+func dummyMutateRowsRequest(tableID string, numRows int) *btpb.MutateRowsRequest {
 	rowKeys := []string{}
-	values := []string{}
-	for i := 0; i < numOfRows; i++ {
+	for i := 0; i < numRows; i++ {
 		rowKeys = append(rowKeys, "row-" + strconv.Itoa(i))
-		values = append(values, "value_" + strconv.Itoa(i))
 	}
-	return dummyMutateRowsRequestCore(rowKeys, values)
+	return dummyMutateRowsRequestCore(tableID, rowKeys)
 }
 
 // TestMutateRows_Generic_Headers tests that MutateRows request has client and resource info in the
 // header.
 func TestMutateRows_Generic_Headers(t *testing.T) {
 	// 0. Common variables
-	const numOfRows int = 2
+	const numRows int = 2
+	const tableID string = "table"
 
 	// 1. Instantiate the mock function
 	// Don't call mockMutateRowsFn() as the behavior is to record metadata of the request.
@@ -108,7 +103,7 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 		// C++ client requires per-row result to be set, otherwise the client returns Internal error.
 		// For Java client, using "return nil" is enough.
 		res := &btpb.MutateRowsResponse{}
-		for i := 0; i < numOfRows; i++ {
+		for i := 0; i < numRows; i++ {
 			res.Entries = append(res.Entries, &btpb.MutateRowsResponse_Entry{
 				Index:  int64(i),
 				Status: &status.Status{},
@@ -120,7 +115,7 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
 		ClientId: "TestMutateRows_Generic_Headers",
-		Request:  dummyMutateRowsRequest(numOfRows),
+		Request:  dummyMutateRowsRequest(tableID, numRows),
 	}
 
 	// 3. Conduct the test
@@ -129,36 +124,36 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
 	assert.NotEmpty(t, md["x-goog-api-client"])
-	assert.Contains(t, md["x-goog-request-params"][0], tableName)
+	assert.Contains(t, md["x-goog-request-params"][0], buildTableName(tableID))
 }
 
 // TestMutateRows_Basic_NonTransientErrors tests that client will not retry on non-transient errors.
 func TestMutateRows_Basic_NonTransientErrors(t *testing.T) {
 	// 0. Common variables
-	const numOfRows int = 4
-	const numOfRPCs int = 1
+	const numRows int = 4
+	const numRPCs int = 1
+	const tableID string = "table"
 	mutatedRowIndices := []int{0, 3}
 	failedRowIndices := []int{1, 2}
 
 	// 1. Instantiate the mock function
-	records := make(chan *mutateRowsReqRecord, numOfRPCs + 1)
+	records := make(chan *mutateRowsReqRecord, numRPCs + 1)
 	action := mutateRowsAction{ // There are 4 rows to mutate, row-1 and row-2 have errors.
-		entries:   buildSimpleEntries(
-			mutatedRowIndices, failedRowIndices, codes.PermissionDenied),
+		data: buildEntryData(mutatedRowIndices, failedRowIndices, codes.PermissionDenied),
 	}
 	mockFn := mockMutateRowsFn(records, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
 		ClientId: "TestMutateRows_Basic_NonTransientErrors",
-		Request:  dummyMutateRowsRequest(numOfRows),
+		Request:  dummyMutateRowsRequest(tableID, numRows),
 	}
 
 	// 3. Conduct the test
 	res := runMutateRowsTest(t, mockFn, &req, nil)
 
 	// 4a. Check the number of requests in the records
-	assert.Equal(t, numOfRPCs, len(records))
+	assert.Equal(t, numRPCs, len(records))
 
 	// 4b. Check the per-row status
 	assert.Empty(t, res.GetStatus().GetCode())
@@ -173,38 +168,39 @@ func TestMutateRows_Basic_NonTransientErrors(t *testing.T) {
 // TestMutateRows_Basic_DeadlineExceeded tests that deadline is set correctly.
 func TestMutateRows_Basic_DeadlineExceeded(t *testing.T) {
 	// 0. Common variables
-	const numOfRows int = 1
-	const numOfRPCs int = 1
+	const numRows int = 1
+	const numRPCs int = 1
+	const tableID string = "table"
 
 	// 1. Instantiate the mock function
-	records := make(chan *mutateRowsReqRecord, numOfRPCs + 1)
+	records := make(chan *mutateRowsReqRecord, numRPCs + 1)
 	action := mutateRowsAction{ // There is one row to mutate, which has a long delay.
-		entries: buildSimpleEntries([]int{0}, nil, 0),
-		delayStr: "5s",
+		data: buildEntryData([]int{0}, nil, 0),
+		delayStr: "10s",
 	}
 	mockFn := mockMutateRowsFn(records, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
 		ClientId: "TestMutateRows_Basic_DeadlineExceeded",
-		Request:  dummyMutateRowsRequest(numOfRows),
+		Request:  dummyMutateRowsRequest(tableID, numRows),
 	}
 
 	// 3. Conduct the test
 	timeout := durationpb.Duration{
-		Seconds: 2, // The value is smaller than the default InitialRpcTimeout, so there won't be retry
+		Seconds: 2,
 	}
 	res := runMutateRowsTest(t, mockFn, &req, &timeout)
 	curTs := time.Now()
 
 	// 4a. Check the number of requests in the records
-	assert.Equal(t, numOfRPCs, len(records))
+	assert.Equal(t, numRPCs, len(records))
 
 	// 4b. Check the runtime
 	origReq := <-records
 	runTimeSecs := int(curTs.Unix() - origReq.ts.Unix())
 	assert.GreaterOrEqual(t, runTimeSecs, 2)
-	assert.Less(t, runTimeSecs, 5)
+	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
 
 	// 4c. Check the per-row error
 	assert.Empty(t, res.GetStatus().GetCode())
@@ -216,22 +212,24 @@ func TestMutateRows_Basic_DeadlineExceeded(t *testing.T) {
 // TestMutateRows_Retry_TransientErrors tests that client will retry transient errors.
 func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 	// 0. Common variables
-	const numOfRows int = 4
-	const numOfRPCs int = 3
+	const numRows int = 4
+	const numRPCs int = 3
+	const tableID string = "table"
+	clientReq := dummyMutateRowsRequest(tableID, numRows)
 
 	// 1. Instantiate the mock function
-	records := make(chan *mutateRowsReqRecord, numOfRPCs + 1)
+	records := make(chan *mutateRowsReqRecord, numRPCs + 1)
 	actions := []mutateRowsAction{
 		mutateRowsAction{ // There are 4 rows to mutate, row-1 and row-2 have errors.
-			entries:   buildSimpleEntries([]int{0, 3}, []int{1, 2}, codes.Unavailable),
-			isLastRes: true,
+			data:        buildEntryData([]int{0, 3}, []int{1, 2}, codes.Unavailable),
+			endOfStream: true,
 		},
 		mutateRowsAction{ // Retry for the two failed rows, row-1 has error.
-			entries:   buildSimpleEntries([]int{1}, []int{0}, codes.Unavailable),
-			isLastRes: true,
+			data:        buildEntryData([]int{1}, []int{0}, codes.Unavailable),
+			endOfStream: true,
 		},
 		mutateRowsAction{ // Retry for the one failed row, which has no error.
-			entries: buildSimpleEntries([]int{0}, nil, 0),
+			data: buildEntryData([]int{0}, nil, 0),
 		},
 	}
 	mockFn := mockMutateRowsFn(records, actions...)
@@ -239,7 +237,7 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
 		ClientId: "TestMutateRows_Retry_TransientErrors",
-		Request:  dummyMutateRowsRequest(numOfRows),
+		Request:  clientReq,
 	}
 
 	// 3. Conduct the test
@@ -249,63 +247,70 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 	assert.Empty(t, res.GetStatus().GetCode())
 
 	// 4b. Check the number of requests in the records
-	assert.Equal(t, numOfRPCs, len(records))
+	assert.Equal(t, numRPCs, len(records))
 
-	// 4c. Check the to-be-mutated rows in the requests
+	// 4c. Check the recorded requests
 	origReq := <-records
 	firstRetry := <-records
 	secondRetry := <-records
 
-	assert.True(t, proto.Equal(req.Request, origReq.req))
-	assert.True(t, proto.Equal(
-		dummyMutateRowsRequestCore(
-			[]string{"row-1", "row-2"}, []string{"value_1", "value_2"}),
-		firstRetry.req))
-	assert.True(t, proto.Equal(
-		dummyMutateRowsRequestCore(
-			[]string{"row-1"}, []string{"value_1"}),
-		secondRetry.req))
+	if diff := cmp.Diff(clientReq, origReq.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
+
+	expectedFirstRetry := dummyMutateRowsRequestCore(tableID, []string{"row-1", "row-2"})
+	if diff := cmp.Diff(expectedFirstRetry, firstRetry.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
+
+	expectedSecondRetry := dummyMutateRowsRequestCore(tableID, []string{"row-1"})
+	if diff := cmp.Diff(expectedSecondRetry, secondRetry.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
 }
 
-func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
+// TestMutateRows_RetryClientGap_ExponentialBackoff tests that client will retry using exponential backoff.
+// Not all client libraries satisfy the requirement, so "ClientGap" is added to the name.
+func TestMutateRows_RetryClientGap_ExponentialBackoff(t *testing.T) {
 	// 0. Common variables
-	const numOfRows int = 1
-	const numOfRPCs int = 4
+	const numRows int = 1
+	const numRPCs int = 4
+	const tableID string = "table"
 
 	// 1. Instantiate the mock function
-	records := make(chan *mutateRowsReqRecord, numOfRPCs + 1)
+	records := make(chan *mutateRowsReqRecord, numRPCs + 1)
 	actions := []mutateRowsAction{
 		mutateRowsAction{ // There is one row to mutate, which has error.
-			entries:   buildSimpleEntries(nil, []int{0}, codes.Unavailable),
-			isLastRes: true,
+			data:        buildEntryData(nil, []int{0}, codes.Unavailable),
+			endOfStream: true,
 		},
 		mutateRowsAction{ // There is one row to mutate, which has error.
-			entries:   buildSimpleEntries(nil, []int{0}, codes.Unavailable),
-			isLastRes: true,
+			data:        buildEntryData(nil, []int{0}, codes.Unavailable),
+			endOfStream: true,
 		},
 		mutateRowsAction{ // There is one row to mutate, which has error.
-			entries:   buildSimpleEntries(nil, []int{0}, codes.Unavailable),
-			isLastRes: true,
+			data:        buildEntryData(nil, []int{0}, codes.Unavailable),
+			endOfStream: true,
 		},
 		mutateRowsAction{ // There is one row to mutate, which has no error.
-			entries: buildSimpleEntries([]int{0}, nil, 0),
+			data: buildEntryData([]int{0}, nil, 0),
 		},
 	}
 	mockFn := mockMutateRowsFn(records, actions...)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
-		ClientId: "TestMutateRows_Retry_ExponentialBackoff",
-		Request:  dummyMutateRowsRequest(numOfRows),
+		ClientId: "TestMutateRows_RetryClientGap_ExponentialBackoff",
+		Request:  dummyMutateRowsRequest(tableID, numRows),
 	}
 
 	// 3. Conduct the test
 	runMutateRowsTest(t, mockFn, &req, nil)
 
 	// 4a. Check the number of requests in the records
-	assert.Equal(t, numOfRPCs, len(records))
+	assert.Equal(t, numRPCs, len(records))
 
-	// 4b. Log the time intervals between consecutive requests
+	// 4b. Check the retry delays
 	origReq := <-records
 	firstRetry := <-records
 	secondRetry := <-records
@@ -315,8 +320,12 @@ func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
 	secondDelay := int(secondRetry.ts.UnixMilli() - firstRetry.ts.UnixMilli())
 	thirdDelay := int(thirdRetry.ts.UnixMilli() - secondRetry.ts.UnixMilli())
 
-	// As different clients may have different implementations, we just log the delays here.
-	// Example: For the intitial retry delay, C++ client uses 100ms but Java client uses 10ms.
+	// Different clients may have different behaviors, we log the delays for informational purpose.
+	// Example: For the first retry delay, C++ client uses 100ms but Java client uses 10ms.
 	// Java client allows the second delay to be smaller than the first delay but C++ client doesn't.
 	t.Logf("The three retry delays are: %dms, %dms, %dms", firstDelay, secondDelay, thirdDelay)
+
+	// Basic assertions are used, but not all clients can pass them consistently.
+	assert.Less(t, firstDelay, secondDelay)
+	assert.Less(t, secondDelay, thirdDelay)
 }

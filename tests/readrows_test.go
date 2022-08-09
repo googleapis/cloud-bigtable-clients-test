@@ -36,6 +36,9 @@ func dummyChunkData(rowKey string, value string, status RowStatus) chunkData {
 // TestReadRows_Generic_Headers tests that ReadRows request has client and resource info in the
 // header.
 func TestReadRows_Generic_Headers(t *testing.T) {
+	// 0. Common variables
+	tableName := buildTableName("table")
+
 	// 1. Instantiate the mock function
 	// Don't call mockReadRowsFn() as the behavior is to record metadata of the request.
 	mdRecords := make(chan metadata.MD, 1)
@@ -75,7 +78,7 @@ func TestReadRows_Basic_PointReadDeadline(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowRequest{
 		ClientId:  "TestReadRows_Basic_PointReadDeadline",
-		TableName: tableName,
+		TableName: buildTableName("table"),
 		RowKey:    "row-01",
 	}
 
@@ -113,7 +116,7 @@ func TestReadRows_Basic_OutOfOrderError(t *testing.T) {
 	req := testproxypb.ReadRowsRequest{
 		ClientId: "TestReadRows_Basic_OutOfOrderError",
 		Request: &btpb.ReadRowsRequest{
-			TableName: tableName,
+			TableName: buildTableName("table"),
 		},
 	}
 
@@ -133,7 +136,7 @@ func TestReadRows_Basic_ErrorAfterLastRow(t *testing.T) {
 		readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("row-01", "v1", Commit)}},
-		readRowsAction{errorCode: codes.DeadlineExceeded}, // Error after returning the requested row
+		readRowsAction{rpcError: codes.DeadlineExceeded}, // Error after returning the requested row
 		readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("row-05", "v5", Commit)}},
@@ -144,7 +147,7 @@ func TestReadRows_Basic_ErrorAfterLastRow(t *testing.T) {
 	req := testproxypb.ReadRowsRequest{
 		ClientId: "TestReadRows_Basic_ErrorAfterLastRow",
 		Request: &btpb.ReadRowsRequest{
-			TableName: tableName,
+			TableName: buildTableName("table"),
 			RowsLimit: 1,
 		},
 	}
@@ -167,7 +170,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 		readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("row-01", "v1", Commit)}},
-		readRowsAction{errorCode: codes.Aborted}, // close the stream by aborting it
+		readRowsAction{rpcError: codes.Aborted}, // close the stream by aborting it
 		readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("row-05", "v5", Commit)}},
@@ -178,7 +181,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 	req := testproxypb.ReadRowsRequest{
 		ClientId: "TestReadRows_Retry_PausedScan",
 		Request: &btpb.ReadRowsRequest{
-			TableName: tableName,
+			TableName: buildTableName("table"),
 		},
 	}
 
@@ -209,7 +212,7 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 		readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("qfoo", "v_q", Drop)}}, // Chunkless response due to Drop
-		readRowsAction{errorCode: codes.DeadlineExceeded},
+		readRowsAction{rpcError: codes.DeadlineExceeded},
 		readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("zbar", "v_z", Commit)}},
@@ -220,7 +223,7 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 	req := testproxypb.ReadRowsRequest{
 		ClientId: "TestReadRows_Retry_LastScannedRow",
 		Request: &btpb.ReadRowsRequest{
-			TableName: tableName,
+			TableName: buildTableName("table"),
 		},
 	}
 

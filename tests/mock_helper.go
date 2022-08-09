@@ -80,8 +80,8 @@ func mockReadRowsFn(records chan<- *readRowsReqRecord, actions ...readRowsAction
 			}
 			sleepFor(action.delayStr)
 
-			if action.errorCode != codes.OK {
-				return gs.Error(action.errorCode, "ReadRows failed")
+			if action.rpcError != codes.OK {
+				return gs.Error(action.rpcError, "ReadRows failed")
 			}
 
 			res := &btpb.ReadRowsResponse{}
@@ -155,8 +155,8 @@ func mockSampleRowKeysFn(records chan<- *sampleRowKeysReqRecord, actions ...samp
 			}
 			sleepFor(action.delayStr)
 
-			if action.errorCode != codes.OK {
-				return gs.Error(action.errorCode, "SampleRowKeys failed")
+			if action.rpcError != codes.OK {
+				return gs.Error(action.rpcError, "SampleRowKeys failed")
 			}
 
 			res := &btpb.SampleRowKeysResponse{
@@ -196,8 +196,8 @@ func mockMutateRowFn(records chan<- *mutateRowReqRecord, actions ...mutateRowAct
 		action := <-actionQueue
 		sleepFor(action.delayStr)
 
-		if action.errorCode != codes.OK {
-			return nil, gs.Error(action.errorCode, "MutateRow failed")
+		if action.rpcError != codes.OK {
+			return nil, gs.Error(action.rpcError, "MutateRow failed")
 		}
 
 		return &btpb.MutateRowResponse{}, nil
@@ -235,20 +235,20 @@ func mockMutateRowsFn(records chan<- *mutateRowsReqRecord, actions ...mutateRows
 			}
 			sleepFor(action.delayStr)
 
-			if action.errorCode != codes.OK {
-				return gs.Error(action.errorCode, "MutateRows failed")
+			if action.rpcError != codes.OK {
+				return gs.Error(action.rpcError, "MutateRows failed")
 			}
 
 			res := &btpb.MutateRowsResponse{}
 			// Fill in entries for rows mutated successfully
-			for _, idx := range action.entries.mutatedRows {
+			for _, idx := range action.data.mutatedRows {
 				res.Entries = append(res.Entries, &btpb.MutateRowsResponse_Entry{
 					Index:  int64(idx),
 					Status: &status.Status{},
 				})
 			}
 			// Fill in entries for rows with errors
-			for errorCode, idxs := range action.entries.failedRows {
+			for errorCode, idxs := range action.data.failedRows {
 				for _, idx := range idxs {
 					res.Entries = append(res.Entries, &btpb.MutateRowsResponse_Entry{
 						Index:  int64(idx),
@@ -258,11 +258,10 @@ func mockMutateRowsFn(records chan<- *mutateRowsReqRecord, actions ...mutateRows
 			}
 			srv.Send(res)
 
-			if action.isLastRes {
+			if action.endOfStream {
 				return nil
 			}
 		}
-
 		return nil
 	}
 }
@@ -294,8 +293,8 @@ func mockCheckAndMutateRowFn(records chan<- *checkAndMutateRowReqRecord, actions
 		action := <-actionQueue
 		sleepFor(action.delayStr)
 
-		if action.errorCode != codes.OK {
-			return nil, gs.Error(action.errorCode, "CheckAndMutateRow failed")
+		if action.rpcError != codes.OK {
+			return nil, gs.Error(action.rpcError, "CheckAndMutateRow failed")
 		}
 
 		return &btpb.CheckAndMutateRowResponse{PredicateMatched: action.predicateMatched}, nil
@@ -329,8 +328,8 @@ func mockReadModifyWriteRowFn(records chan<- *readModifyWriteRowReqRecord, actio
 		action := <-actionQueue
 		sleepFor(action.delayStr)
 
-		if action.errorCode != codes.OK {
-			return nil, gs.Error(action.errorCode, "ReadModifyWriteRow failed")
+		if action.rpcError != codes.OK {
+			return nil, gs.Error(action.rpcError, "ReadModifyWriteRow failed")
 		}
 
 		return &btpb.ReadModifyWriteRowResponse{Row: action.row}, nil

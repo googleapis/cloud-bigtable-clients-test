@@ -18,18 +18,19 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 // dummyReadModifyWriteRowRequest returns a dummy ReadModifyWriteRowRequest.
 // ReadModifyWriteRules are built from interleved "increment" and "append" actions.
-// The columns are f:col_str and f:col_int.
-func dummyReadModifyWriteRowRequest(rowKey []byte, increments []int64, appends []string) *btpb.ReadModifyWriteRowRequest {
+// The columns are "f:col_str" and "f:col_int".
+func dummyReadModifyWriteRowRequest(tableID string, rowKey []byte, increments []int64, appends []string) *btpb.ReadModifyWriteRowRequest {
 	req := &btpb.ReadModifyWriteRowRequest{
-		TableName: tableName,
+		TableName: buildTableName(tableID),
 		RowKey:    []byte("row-01"),
 		Rules:	   []*btpb.ReadModifyWriteRule{},
 	}
@@ -107,7 +108,7 @@ func TestReadModifyWriteRow_Basic_MultiValues(t *testing.T) {
 	increments := []int64{10, 2}
 	appends := []string{"append"}
 	rowKey := []byte("row-01")
-	clientReq := dummyReadModifyWriteRowRequest(rowKey, increments, appends)
+	clientReq := dummyReadModifyWriteRowRequest("table", rowKey, increments, appends)
 
 	// 1. Instantiate the mock function
 	records := make(chan *readModifyWriteRowReqRecord, 1)
@@ -126,7 +127,9 @@ func TestReadModifyWriteRow_Basic_MultiValues(t *testing.T) {
 	// 4. Check that dummy request is sent, and dummyRow is returned.
 	assert.Empty(t, res.GetStatus().GetCode())
 	loggedReq := <- records
-	assert.True(t, proto.Equal(clientReq, loggedReq.req))
+	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
 	assert.Equal(t, "row-01", string(res.Row.Key))
 	assert.Equal(t, 10 + 2, int(binary.BigEndian.Uint64(res.Row.Families[0].Columns[0].Cells[0].Value)))
 	assert.Equal(t, "append", string(res.Row.Families[0].Columns[1].Cells[0].Value))

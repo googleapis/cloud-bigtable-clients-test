@@ -25,12 +25,15 @@ import (
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 )
 
-// dummyMutateRowRequest returns a dummy MutateRowRequest for the given `rowKey`.
-// The number of mutations is customizable via `numMutations`. For simplicity, only "SetCell" is used,
-// family name and timestamp are fixed.
-func dummyMutateRowRequest(rowKey []byte, numMutations int) *btpb.MutateRowRequest {
-	req := &btpb.MutateRowRequest{TableName: tableName, RowKey: rowKey, Mutations: []*btpb.Mutation{}}
-
+// dummyMutateRowRequest returns a dummy MutateRowRequest. The number of mutations is customizable
+// via `numMutations`. For simplicity, only "SetCell" is used, family names and timestamps are
+// hard-coded.
+func dummyMutateRowRequest(tableID string, rowKey []byte, numMutations int) *btpb.MutateRowRequest {
+	req := &btpb.MutateRowRequest{
+		TableName: buildTableName(tableID),
+		RowKey: rowKey,
+		Mutations: []*btpb.Mutation{},
+	}
 	for i := 0; i < numMutations; i++ {
 		mutation := &btpb.Mutation{
 			Mutation: &btpb.Mutation_SetCell_{
@@ -44,7 +47,6 @@ func dummyMutateRowRequest(rowKey []byte, numMutations int) *btpb.MutateRowReque
 		}
 		req.Mutations = append(req.Mutations, mutation)
 	}
-
 	return req
 }
 
@@ -63,7 +65,7 @@ func TestMutateRow_Basic_NonprintableByteKey(t *testing.T) {
 	}
 	req := testproxypb.MutateRowRequest{
 		ClientId: "TestMutateRow_Basic_NonprintableByteKey",
-		Request:  dummyMutateRowRequest(nonprintableByteKey, 1),
+		Request:  dummyMutateRowRequest("table", nonprintableByteKey, 1),
 	}
 
 	// 3. Conduct the test
@@ -85,7 +87,7 @@ func TestMutateRow_Basic_MultipleMutations(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowRequest{
 		ClientId: "TestMutateRow_Basic_NonprintableByteKey",
-		Request:  dummyMutateRowRequest([]byte("row-01"), 2), // 2 mutations
+		Request:  dummyMutateRowRequest("table", []byte("row-01"), 2),
 	}
 
 	// 3. Conduct the test
