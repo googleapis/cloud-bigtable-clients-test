@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//     https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The file is copied from https://github.com/googleapis/google-cloud-go/blob/main/bigtable/internal/mockserver/inmem.go
+// with minor modification.
 package tests
 
 import (
@@ -26,7 +28,6 @@ import (
 
 // Server is an in-memory Cloud Bigtable fake.
 // It is unauthenticated, and only a rough approximation.
-// Copied from https://github.com/googleapis/google-cloud-go/blob/main/bigtable/internal/mockserver/inmem.go.
 type Server struct {
 	Addr string
 

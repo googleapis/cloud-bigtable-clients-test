@@ -4,14 +4,14 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//     https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
+
 // This file defines data types that allow the test cases to customize the
 // behavior of mock server:
 // "<operation>Action" types tell the server to either perform the operation
@@ -20,7 +20,6 @@
 // where the server will perform each action only once.
 // "<operation>ReqRecord" types let the server log the request from client
 // with timestamp.
-
 package tests
 
 import (
