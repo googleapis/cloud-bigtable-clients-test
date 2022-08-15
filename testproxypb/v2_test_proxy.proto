@@ -11,9 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-// Defines an gRPC service for managing and calling through client binding
-// test proxies.
 
 syntax = "proto3";
 
@@ -113,8 +110,8 @@ message CreateClientRequest {
   // refreshes. Has no effect on other clients.
   google.protobuf.Duration max_conn_refresh_period = 10;
   // If provided, a custom timeout will be set for each API call conducted by
-  // the test proxy. Otherwise, the default timeout from the client library will
-  // be used.
+  // the created client. Otherwise, the default timeout from the client library
+  // will be used. Note that the override applies to all the methods.
   google.protobuf.Duration per_operation_timeout = 11;
 }
 
@@ -172,8 +169,9 @@ message MutateRowsRequest {
 }
 
 message MutateRowsResult {
-  // An overall status: OK if and only if all mutations succeeded.
+  // Overall RPC status
   google.rpc.Status status = 1;
+  // To record individual entry failures
   repeated google.bigtable.v2.MutateRowsResponse.Entry entry = 2;
 }
 
