@@ -103,16 +103,10 @@ message CreateClientRequest {
   CallCredential call_credential = 7;
   // If provided, override the SSL target name with this target.
   string override_ssl_target_name = 8;
-  // C++ specific client option. Sets the minimum delay between client
-  // refreshes. Has no effect on other clients.
-  google.protobuf.Duration min_conn_refresh_period = 9;
-  // C++ specific client option. Sets the maximum delay between client
-  // refreshes. Has no effect on other clients.
-  google.protobuf.Duration max_conn_refresh_period = 10;
   // If provided, a custom timeout will be set for each API call conducted by
   // the created client. Otherwise, the default timeout from the client library
   // will be used. Note that the override applies to all the methods.
-  google.protobuf.Duration per_operation_timeout = 11;
+  google.protobuf.Duration per_operation_timeout = 9;
 }
 
 message CreateClientResponse {}
