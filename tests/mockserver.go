@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The file is copied from https://github.com/googleapis/google-cloud-go/blob/main/bigtable/internal/mockserver/inmem.go
+// This file is copied from
+// https://github.com/googleapis/google-cloud-go/blob/main/bigtable/internal/mockserver/inmem.go
 // with minor modification.
 package tests
 

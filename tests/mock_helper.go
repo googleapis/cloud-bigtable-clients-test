@@ -61,6 +61,9 @@ func mockReadRowsFn(records chan<- *readRowsReqRecord, actions ...readRowsAction
 	close(actionQueue)
 
 	return func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
+		if *printClientReq {
+			serverLogger.Printf("Request from client: %+v", req)
+		}
 		if records != nil {
 			reqRecord := readRowsReqRecord{
 				req: req,
@@ -136,6 +139,9 @@ func mockSampleRowKeysFn(records chan<- *sampleRowKeysReqRecord, actions ...samp
 	close(actionQueue)
 
 	return func(req *btpb.SampleRowKeysRequest, srv btpb.Bigtable_SampleRowKeysServer) error {
+		if *printClientReq {
+			serverLogger.Printf("Request from client: %+v", req)
+		}
 		if records != nil {
 			reqRecord := sampleRowKeysReqRecord{
 				req: req,
@@ -181,6 +187,9 @@ func mockMutateRowFn(records chan<- *mutateRowReqRecord, actions ...mutateRowAct
 	close(actionQueue)
 
 	return func(ctx context.Context, req *btpb.MutateRowRequest) (*btpb.MutateRowResponse, error) {
+		if *printClientReq {
+			serverLogger.Printf("Request from client: %+v", req)
+		}
 		if records != nil {
 			reqRecord := mutateRowReqRecord{
 				req: req,
@@ -216,6 +225,9 @@ func mockMutateRowsFn(records chan<- *mutateRowsReqRecord, actions ...mutateRows
 	close(actionQueue)
 
 	return func(req *btpb.MutateRowsRequest, srv btpb.Bigtable_MutateRowsServer) error {
+		if *printClientReq {
+			serverLogger.Printf("Request from client: %+v", req)
+		}
 		if records != nil {
 			reqRecord := mutateRowsReqRecord{
 				req: req,
@@ -278,6 +290,9 @@ func mockCheckAndMutateRowFn(records chan<- *checkAndMutateRowReqRecord, actions
 	close(actionQueue)
 
 	return func(ctx context.Context, req *btpb.CheckAndMutateRowRequest) (*btpb.CheckAndMutateRowResponse, error) {
+		if *printClientReq {
+			serverLogger.Printf("Request from client: %+v", req)
+		}
 		if records != nil {
 			reqRecord := checkAndMutateRowReqRecord{
 				req: req,
@@ -313,6 +328,9 @@ func mockReadModifyWriteRowFn(records chan<- *readModifyWriteRowReqRecord, actio
 	close(actionQueue)
 
 	return func(ctx context.Context, req *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error) {
+		if *printClientReq {
+			serverLogger.Printf("Request from client: %+v", req)
+		}
 		if records != nil {
 			reqRecord := readModifyWriteRowReqRecord{
 				req: req,

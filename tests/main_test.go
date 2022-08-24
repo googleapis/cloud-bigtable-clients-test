@@ -31,6 +31,9 @@ var proxyAddr = flag.String("proxy_addr", "",
 	"The address of the test proxy server, which exports the CloudBigtableV2TestProxy "+
 	"service and should be running already. host:port address is expected. "+
 	":port also works as the proxy server is local.")
+var printClientReq = flag.Bool("print_client_req", false,
+	"If enabled, server will print its received requests from the client. It helps debugging, "+
+	"but is quite verbose. Default to false.")
 
 // testProxyClient is the stub used by all the test cases to interact with the test proxy.
 var testProxyClient testproxypb.CloudBigtableV2TestProxyClient
