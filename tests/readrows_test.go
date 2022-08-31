@@ -24,6 +24,7 @@ import (
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -50,14 +51,12 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
-		ClientId: "TestReadRows_Generic_Headers",
-		Request: &btpb.ReadRowsRequest{
-			TableName: tableName,
-		},
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: tableName},
 	}
 
-	// 3. Conduct the test
-	runReadRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	doReadRowsOp(t, mockFn, &req, nil)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -65,28 +64,28 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 	assert.Contains(t, md["x-goog-request-params"][0], tableName)
 }
 
-// TestReadRows_Basic_PointReadDeadline tests that client will set deadline for point read.
-func TestReadRows_Basic_PointReadDeadline(t *testing.T) {
+// TestReadRow_NoRetry_PointReadDeadline tests that client will set deadline for point read.
+func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
 	// 1. Instantiate the mock function
 	records := make(chan *readRowsReqRecord, 1)
 	oneResponse := readRowsAction{
-		chunks: []chunkData{dummyChunkData("row-01", "v1", Commit)},
+		chunks:   []chunkData{dummyChunkData("row-01", "v1", Commit)},
 		delayStr: "5s",
 	}
 	mockFn := mockReadRowsFn(records, oneResponse)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowRequest{
-		ClientId:  "TestReadRows_Basic_PointReadDeadline",
+		ClientId:  t.Name(),
 		TableName: buildTableName("table"),
 		RowKey:    "row-01",
 	}
 
-	// 3. Conduct the test
+	// 3. Perform the operation via test proxy
 	timeout := durationpb.Duration{
 		Seconds: 2,
 	}
-	res := runReadRowTest(t, mockFn, &req, &timeout)
+	res := doReadRowOp(t, mockFn, &req, &timeout)
 
 	// 4a. Check the runtime
 	curTs := time.Now()
@@ -99,8 +98,8 @@ func TestReadRows_Basic_PointReadDeadline(t *testing.T) {
 	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
 
-// TestReadRows_Basic_OutOfOrderError tests that client will fail on receiving out of order row keys.
-func TestReadRows_Basic_OutOfOrderError(t *testing.T) {
+// TestReadRows_NoRetry_OutOfOrderError tests that client will fail on receiving out of order row keys.
+func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 	// 1. Instantiate the mock function
 	oneResponse := readRowsAction{
 		chunks: []chunkData{
@@ -114,23 +113,21 @@ func TestReadRows_Basic_OutOfOrderError(t *testing.T) {
 
 	// 2. Build the request to test proxyk
 	req := testproxypb.ReadRowsRequest{
-		ClientId: "TestReadRows_Basic_OutOfOrderError",
-		Request: &btpb.ReadRowsRequest{
-			TableName: buildTableName("table"),
-		},
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
 	}
 
-	// 3. Conduct the test
-	res := runReadRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, mockFn, &req, nil)
 
 	// 4. Check the response (C++ and Java clients have different error messages)
 	assert.Contains(t, res.GetStatus().GetMessage(), "increasing")
 	t.Logf("The full error message is: %s", res.GetStatus().GetMessage())
 }
 
-// TestReadRows_Basic_ErrorAfterLastRow tests that when receiving a transient error after receiving
+// TestReadRows_NoRetry_ErrorAfterLastRow tests that when receiving a transient error after receiving
 // the last row, the read will still finish successfully.
-func TestReadRows_Basic_ErrorAfterLastRow(t *testing.T) {
+func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 	// 1. Instantiate the mock function
 	stream := []readRowsAction{
 		readRowsAction{
@@ -145,15 +142,15 @@ func TestReadRows_Basic_ErrorAfterLastRow(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
-		ClientId: "TestReadRows_Basic_ErrorAfterLastRow",
-		Request: &btpb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{
 			TableName: buildTableName("table"),
 			RowsLimit: 1,
 		},
 	}
 
-	// 3. Conduct the test
-	res := runReadRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, mockFn, &req, nil)
 
 	// 4. Verify that the read succeeds
 	assert.Empty(t, res.GetStatus().GetCode())
@@ -179,14 +176,12 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
-		ClientId: "TestReadRows_Retry_PausedScan",
-		Request: &btpb.ReadRowsRequest{
-			TableName: buildTableName("table"),
-		},
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
 	}
 
-	// 3. Conduct the test
-	res := runReadRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, mockFn, &req, nil)
 
 	// 4a. Verify that two rows were read successfully
 	assert.Empty(t, res.GetStatus().GetCode())
@@ -221,14 +216,12 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
-		ClientId: "TestReadRows_Retry_LastScannedRow",
-		Request: &btpb.ReadRowsRequest{
-			TableName: buildTableName("table"),
-		},
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
 	}
 
-	// 3. Conduct the test
-	res := runReadRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, mockFn, &req, nil)
 
 	// 4a. Verify that rows aabar and zzbar were read successfully (qqfoo doesn't match the filter)
 	assert.Empty(t, res.GetStatus().GetCode())
@@ -241,4 +234,66 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 	loggedRetry := <-records
 	assert.Empty(t, loggedReq.req.GetRows().GetRowRanges())
 	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("qfoo")}))
+}
+
+// TestReadRow_NoRetry_CommitInSeparateChunk tests that client can have one chunk
+// with no status and subsequent chunk with a commit status.
+func TestReadRow_NoRetry_CommitInSeparateChunk(t *testing.T) {
+	// 1. Instantiate the mock function
+	records := make(chan *readRowsReqRecord, 1)
+	oneResponse := readRowsAction{
+		chunks: []chunkData{
+			chunkData{rowKey: []byte("row-01"), familyName: "A", qualifier: "Qw1", timestampMicros: 99, value: "dmFsdWUtVkFM", status: None},
+			chunkData{familyName: "B", qualifier: "Qw2", timestampMicros: 102, value: "dmFsdWUtVkFJ", status: Commit},
+		},
+	}
+
+	mockFn := mockReadRowsFn(records, oneResponse)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowRequest{
+		ClientId:  t.Name(),
+		TableName: buildTableName("table"),
+		RowKey:    "row-01",
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowOp(t, mockFn, &req, nil)
+
+	// 4. Verify that the read succeeds
+	expectedRow := btpb.Row{
+		Key: []byte("row-01"),
+		Families: []*btpb.Family{
+			&btpb.Family{
+				Name: "A",
+				Columns: []*btpb.Column{
+					&btpb.Column{
+						Qualifier: []byte("Qw1"),
+						Cells: []*btpb.Cell{
+							&btpb.Cell{
+								TimestampMicros: 99,
+								Value:           []byte("dmFsdWUtVkFM"),
+							},
+						},
+					},
+				},
+			},
+			&btpb.Family{
+				Name: "B",
+				Columns: []*btpb.Column{
+					&btpb.Column{
+						Qualifier: []byte("Qw2"),
+						Cells: []*btpb.Cell{
+							&btpb.Cell{
+								TimestampMicros: 102,
+								Value:           []byte("dmFsdWUtVkFJ"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	assert.Equal(t, "", cmp.Diff(expectedRow, res.Row, protocmp.Transform()))
 }

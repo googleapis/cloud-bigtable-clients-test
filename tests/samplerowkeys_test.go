@@ -22,8 +22,8 @@ import (
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 )
 
-// TestSampleRowKeys_Basic_NoEmptyKey tests that client should accept a list with no empty key.
-func TestSampleRowKeys_Basic_NoEmptyKey(t *testing.T) {
+// TestSampleRowKeys_NoRetry_NoEmptyKey tests that client should accept a list with no empty key.
+func TestSampleRowKeys_NoRetry_NoEmptyKey(t *testing.T) {
 	// 1. Instantiate the mock function
 	stream := []sampleRowKeysAction{
 		sampleRowKeysAction{rowKey: []byte("row-31"), offsetBytes: 30},
@@ -33,14 +33,12 @@ func TestSampleRowKeys_Basic_NoEmptyKey(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.SampleRowKeysRequest{
-		ClientId: "TestSampleRowKeys_Basic_NoEmptyKey",
-		Request: &btpb.SampleRowKeysRequest{
-			TableName: buildTableName("table"),
-		},
+		ClientId: t.Name(),
+		Request:  &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
 	}
 
-	// 3. Conduct the test
-	res := runSampleRowKeysTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doSampleRowKeysOp(t, mockFn, &req, nil)
 
 	// 4. Check that the operation succeeded
 	assert.Empty(t, res.GetStatus().GetCode())

@@ -16,6 +16,7 @@ package tests
 
 import (
 	"encoding/binary"
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -31,7 +32,7 @@ import (
 func dummyReadModifyWriteRowRequest(tableID string, rowKey []byte, increments []int64, appends []string) *btpb.ReadModifyWriteRowRequest {
 	req := &btpb.ReadModifyWriteRowRequest{
 		TableName: buildTableName(tableID),
-		RowKey:    []byte("row-01"),
+		RowKey:    rowKey,
 		Rules:	   []*btpb.ReadModifyWriteRule{},
 	}
 
@@ -82,7 +83,7 @@ func dummyResultRow(rowKey []byte, increments []int64, appends []string) *btpb.R
 	}
 
 	row := &btpb.Row{
-		Key: []byte("row-01"),
+		Key:      rowKey,
 		Families: []*btpb.Family{
 			&btpb.Family{
 				Name: "f",
@@ -102,36 +103,93 @@ func dummyResultRow(rowKey []byte, increments []int64, appends []string) *btpb.R
 	return row
 }
 
-// TestReadModifyWriteRow_Basic_MultiValues tests that client can increment & append multiple values.
-func TestReadModifyWriteRow_Basic_MultiValues(t *testing.T) {
+// TestReadModifyWriteRow_NoRetry_MultiValues tests that client can increment & append multiple values.
+func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 	// 0. Common variables
 	increments := []int64{10, 2}
-	appends := []string{"append"}
+	appends := []string{"str1", "str2"}
 	rowKey := []byte("row-01")
 	clientReq := dummyReadModifyWriteRowRequest("table", rowKey, increments, appends)
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mockserver function
 	records := make(chan *readModifyWriteRowReqRecord, 1)
 	action := readModifyWriteRowAction{row: dummyResultRow(rowKey, increments, appends)}
 	mockFn := mockReadModifyWriteRowFn(records, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadModifyWriteRowRequest{
-		ClientId: "TestReadModifyWriteRow_Basic_MultiValues",
+		ClientId: t.Name(),
 		Request:  clientReq,
 	}
 
-	// 3. Conduct the test
-	res := runReadModifyWriteRowTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doReadModifyWriteRowOp(t, mockFn, &req, nil)
 
-	// 4. Check that dummy request is sent, and dummyRow is returned.
+	// 4. Check that the dummy request is sent and the dummy row is returned
+	assert.NotEmpty(t, res)
 	assert.Empty(t, res.GetStatus().GetCode())
 	loggedReq := <- records
 	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
 		t.Errorf("diff found (-want +got):\n%s", diff)
 	}
-	assert.Equal(t, "row-01", string(res.Row.Key))
+	assert.Equal(t, rowKey, res.Row.Key)
 	assert.Equal(t, 10 + 2, int(binary.BigEndian.Uint64(res.Row.Families[0].Columns[0].Cells[0].Value)))
-	assert.Equal(t, "append", string(res.Row.Families[0].Columns[1].Cells[0].Value))
+	assert.Equal(t, "str1" + "str2", string(res.Row.Families[0].Columns[1].Cells[0].Value))
 }
 
+// TestReadModifyWriteRow_NoRetry_MultiStreams tests that client can have multiple concurrent streams.
+func TestReadModifyWriteRow_NoRetry_MultiStreams(t *testing.T) {
+	// 0. Common variables
+	increments := []int64{10, 2}
+	appends := []string{"append"}
+	rowKeys := []string{"row-01", "row-02", "row-03", "row-04", "row-05"}
+	concurrency := len(rowKeys)
+
+	// 1. Instantiate the mockserver function
+	records := make(chan *readModifyWriteRowReqRecord, concurrency + 1)
+	actions := make([]readModifyWriteRowAction, concurrency)
+	for i := 0; i < concurrency; i++ {
+		actions[i] = readModifyWriteRowAction{
+			row: dummyResultRow([]byte(rowKeys[i]), increments, appends),
+			delayStr: "2s"}
+	}
+	mockFn := mockReadModifyWriteRowFn(records, actions...)
+
+	// 2. Build the requests to test proxy
+	reqs := make([]*testproxypb.ReadModifyWriteRowRequest, concurrency)
+	for i := 0; i < concurrency; i++ {
+		clientReq := dummyReadModifyWriteRowRequest("table", []byte(rowKeys[i]), increments, appends)
+		reqs[i] = &testproxypb.ReadModifyWriteRowRequest{
+			ClientId: t.Name(),
+			Request:  clientReq,
+		}
+	}
+
+	// 3. Perform the operations via test proxy
+	results := doReadModifyWriteRowOps(t, mockFn, reqs, nil)
+
+	// 4a. Check that all the requests succeeded
+	assert.Equal(t, concurrency, len(results))
+	for i := 0; i < concurrency; i++ {
+		res := results[i]
+		assert.NotEmpty(t, res)
+		assert.Empty(t, res.GetStatus().GetCode())
+	}
+
+	// 4b. Check that the timestamps of requests should be very close
+	assert.Equal(t, concurrency, len(records))
+	minTsMs := int64(math.MaxInt64)
+	maxTsMs := int64(math.MinInt64)
+	for i := 0; i < concurrency; i++ {
+		loggedReq := <- records
+		ts := loggedReq.ts.UnixMilli()
+		if (minTsMs > ts) {
+			minTsMs = ts
+		}
+		if (maxTsMs < ts) {
+			maxTsMs = ts
+		}
+	}
+	t.Logf("The requests were received within %dms", maxTsMs - minTsMs)
+	assert.Less(t, maxTsMs - minTsMs, int64(1000))
+}

@@ -49,8 +49,8 @@ func dummyCheckAndMutateRowRequest(tableID string, predicateMatched bool, numMut
 	return req
 }
 
-// TestCheckAndMutateRow_Basic_TrueMutations tests that client can request true mutations.
-func TestCheckAndMutateRow_Basic_TrueMutations(t *testing.T) {
+// TestCheckAndMutateRow_NoRetry_TrueMutations tests that client can request true mutations.
+func TestCheckAndMutateRow_NoRetry_TrueMutations(t *testing.T) {
 	// 0. Common variable
 	const predicateMatched bool = true
 
@@ -61,12 +61,12 @@ func TestCheckAndMutateRow_Basic_TrueMutations(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
-		ClientId: "TestCheckAndMutateRow_Basic_TrueMutations",
+		ClientId: t.Name(),
 		Request:  dummyCheckAndMutateRowRequest("table", predicateMatched, 2),
 	}
 
-	// 3. Conduct the test
-	res := runCheckAndMutateRowTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doCheckAndMutateRowOp(t, mockFn, &req, nil)
 
 	// 4. Check that the operation succeeded
 	loggedReq := <- records
@@ -76,8 +76,8 @@ func TestCheckAndMutateRow_Basic_TrueMutations(t *testing.T) {
 	assert.True(t, res.Result.PredicateMatched)
 }
 
-// TestCheckAndMutateRow_Basic_FalseMutations tests that client can request false mutations.
-func TestCheckAndMutateRow_Basic_FalseMutations(t *testing.T) {
+// TestCheckAndMutateRow_NoRetry_FalseMutations tests that client can request false mutations.
+func TestCheckAndMutateRow_NoRetry_FalseMutations(t *testing.T) {
 	// 0. Common variable
 	const predicateMatched bool = false
 
@@ -88,12 +88,12 @@ func TestCheckAndMutateRow_Basic_FalseMutations(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
-		ClientId: "TestCheckAndMutateRow_Basic_FalseMutations",
+		ClientId: t.Name(),
 		Request:  dummyCheckAndMutateRowRequest("table", predicateMatched, 2),
 	}
 
-	// 3. Conduct the test
-	res := runCheckAndMutateRowTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doCheckAndMutateRowOp(t, mockFn, &req, nil)
 
 	// 4. Check that the operation succeeded
 	loggedReq := <- records

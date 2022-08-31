@@ -114,12 +114,12 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
-		ClientId: "TestMutateRows_Generic_Headers",
+		ClientId: t.Name(),
 		Request:  dummyMutateRowsRequest(tableID, numRows),
 	}
 
-	// 3. Conduct the test
-	runMutateRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	doMutateRowsOp(t, mockFn, &req, nil)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -127,8 +127,8 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 	assert.Contains(t, md["x-goog-request-params"][0], buildTableName(tableID))
 }
 
-// TestMutateRows_Basic_NonTransientErrors tests that client will not retry on non-transient errors.
-func TestMutateRows_Basic_NonTransientErrors(t *testing.T) {
+// TestMutateRows_NoRetry_NonTransientErrors tests that client will not retry on non-transient errors.
+func TestMutateRows_NoRetry_NonTransientErrors(t *testing.T) {
 	// 0. Common variables
 	const numRows int = 4
 	const numRPCs int = 1
@@ -145,12 +145,12 @@ func TestMutateRows_Basic_NonTransientErrors(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
-		ClientId: "TestMutateRows_Basic_NonTransientErrors",
+		ClientId: t.Name(),
 		Request:  dummyMutateRowsRequest(tableID, numRows),
 	}
 
-	// 3. Conduct the test
-	res := runMutateRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doMutateRowsOp(t, mockFn, &req, nil)
 
 	// 4a. Check the number of requests in the records
 	assert.Equal(t, numRPCs, len(records))
@@ -165,8 +165,8 @@ func TestMutateRows_Basic_NonTransientErrors(t *testing.T) {
 	assert.ElementsMatch(t, failedRowIndices, outputIndices)
 }
 
-// TestMutateRows_Basic_DeadlineExceeded tests that deadline is set correctly.
-func TestMutateRows_Basic_DeadlineExceeded(t *testing.T) {
+// TestMutateRows_NoRetry_DeadlineExceeded tests that deadline is set correctly.
+func TestMutateRows_NoRetry_DeadlineExceeded(t *testing.T) {
 	// 0. Common variables
 	const numRows int = 1
 	const numRPCs int = 1
@@ -182,15 +182,15 @@ func TestMutateRows_Basic_DeadlineExceeded(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
-		ClientId: "TestMutateRows_Basic_DeadlineExceeded",
+		ClientId: t.Name(),
 		Request:  dummyMutateRowsRequest(tableID, numRows),
 	}
 
-	// 3. Conduct the test
+	// 3. Perform the operation via test proxy
 	timeout := durationpb.Duration{
 		Seconds: 2,
 	}
-	res := runMutateRowsTest(t, mockFn, &req, &timeout)
+	res := doMutateRowsOp(t, mockFn, &req, &timeout)
 	curTs := time.Now()
 
 	// 4a. Check the number of requests in the records
@@ -236,12 +236,12 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
-		ClientId: "TestMutateRows_Retry_TransientErrors",
+		ClientId: t.Name(),
 		Request:  clientReq,
 	}
 
-	// 3. Conduct the test
-	res := runMutateRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doMutateRowsOp(t, mockFn, &req, nil)
 
 	// 4a. Check that the overall operation succeeded
 	assert.Empty(t, res.GetStatus().GetCode())
@@ -300,12 +300,12 @@ func TestMutateRows_RetryClientGap_ExponentialBackoff(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
-		ClientId: "TestMutateRows_RetryClientGap_ExponentialBackoff",
+		ClientId: t.Name(),
 		Request:  dummyMutateRowsRequest(tableID, numRows),
 	}
 
-	// 3. Conduct the test
-	runMutateRowsTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	doMutateRowsOp(t, mockFn, &req, nil)
 
 	// 4a. Check the number of requests in the records
 	assert.Equal(t, numRPCs, len(records))

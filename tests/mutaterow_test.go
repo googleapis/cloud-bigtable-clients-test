@@ -50,8 +50,8 @@ func dummyMutateRowRequest(tableID string, rowKey []byte, numMutations int) *btp
 	return req
 }
 
-// TestMutateRow_Basic_NonprintableByteKey tests that client can specify non-printable byte strings as row key.
-func TestMutateRow_Basic_NonprintableByteKey(t *testing.T) {
+// TestMutateRow_NoRetry_NonprintableByteKey tests that client can specify non-printable byte strings as row key.
+func TestMutateRow_NoRetry_NonprintableByteKey(t *testing.T) {
 	// 1. Instantiate the mock function
 	records := make(chan *mutateRowReqRecord, 1)
 	action := mutateRowAction{}
@@ -64,12 +64,12 @@ func TestMutateRow_Basic_NonprintableByteKey(t *testing.T) {
 		t.Fatalf("Unable to convert hex to byte: %v", err)
 	}
 	req := testproxypb.MutateRowRequest{
-		ClientId: "TestMutateRow_Basic_NonprintableByteKey",
+		ClientId: t.Name(),
 		Request:  dummyMutateRowRequest("table", nonprintableByteKey, 1),
 	}
 
-	// 3. Conduct the test
-	res := runMutateRowTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doMutateRowOp(t, mockFn, &req, nil)
 
 	// 4. Check that the operation succeeded
 	loggedReq := <- records
@@ -77,8 +77,8 @@ func TestMutateRow_Basic_NonprintableByteKey(t *testing.T) {
 	assert.Empty(t, res.GetStatus().GetCode())
 }
 
-// TestMutateRow_Basic_MultipleMutations tests that client can specify multiple mutations for a row.
-func TestMutateRow_Basic_MultipleMutations(t *testing.T) {
+// TestMutateRow_NoRetry_MultipleMutations tests that client can specify multiple mutations for a row.
+func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
 	// 1. Instantiate the mock function
 	records := make(chan *mutateRowReqRecord, 1)
 	action := mutateRowAction{}
@@ -86,12 +86,12 @@ func TestMutateRow_Basic_MultipleMutations(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowRequest{
-		ClientId: "TestMutateRow_Basic_NonprintableByteKey",
+		ClientId: t.Name(),
 		Request:  dummyMutateRowRequest("table", []byte("row-01"), 2),
 	}
 
-	// 3. Conduct the test
-	res := runMutateRowTest(t, mockFn, &req, nil)
+	// 3. Perform the operation via test proxy
+	res := doMutateRowOp(t, mockFn, &req, nil)
 
 	// 4. Check that the operation succeeded
 	loggedReq := <- records

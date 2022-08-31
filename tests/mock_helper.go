@@ -345,7 +345,6 @@ func mockReadModifyWriteRowFn(records chan<- *readModifyWriteRowReqRecord, actio
 
 		action := <-actionQueue
 		sleepFor(action.delayStr)
-
 		if action.rpcError != codes.OK {
 			return nil, gs.Error(action.rpcError, "ReadModifyWriteRow failed")
 		}

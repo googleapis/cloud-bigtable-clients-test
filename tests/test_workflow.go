@@ -17,6 +17,7 @@ package tests
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/golang/protobuf/ptypes/empty"
@@ -38,8 +39,8 @@ func buildTableName(tableID string) string {
 }
 
 // createCbtClient creates a CBT client in the test proxy. The client is given an ID `clientID`, and
-// it will target the given server `serverAddr` with custom timeout setting `timeout`. Any failure
-// here will cause the test to fail immediately (e.g., there is client ID collision).
+// it will target the given server `serverAddr` with custom timeout setting `timeout`. Creation
+// error will cause the test to fail immediately (e.g., client ID collision).
 func createCbtClient(t *testing.T, clientID string, serverAddr string, timeout *durationpb.Duration) {
 	req := testproxypb.CreateClientRequest{
 		ClientId:   clientID,
@@ -71,10 +72,10 @@ func removeCbtClient(t *testing.T, clientID string) {
 	}
 }
 
-// runReadRowTest performs a ReadRow operation using the test proxy request `req` and the Bigtable
+// doReadRowOp performs a ReadRow operation using the test proxy request `req` and the Bigtable
 // server mock function `mockFn`. Non-nil `timeout` will override the default setting of Bigtable
 // client. The test proxy's response will be returned.
-func runReadRowTest(
+func doReadRowOp(
 	t *testing.T,
 	mockFn func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error,
 	req *testproxypb.ReadRowRequest, timeout *durationpb.Duration) *testproxypb.RowResult {
@@ -103,10 +104,10 @@ func runReadRowTest(
 	return res
 }
 
-// runReadRowsTest performs a ReadRows operation using the test proxy request `req` and the Bigtable
+// doReadRowsOp performs a ReadRows operation using the test proxy request `req` and the Bigtable
 // server mock function `mockFn`. Non-nil `timeout` will override the default setting of Bigtable
 // client. The test proxy's response will be returned.
-func runReadRowsTest(
+func doReadRowsOp(
 	t *testing.T,
 	mockFn func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error,
 	req *testproxypb.ReadRowsRequest, timeout *durationpb.Duration) *testproxypb.RowsResult {
@@ -135,10 +136,10 @@ func runReadRowsTest(
 	return res
 }
 
-// runMutateRowTest performs a MutateRow operation using the test proxy request `req` and the
+// doMutateRowOp performs a MutateRow operation using the test proxy request `req` and the
 // Bigtable server mock function `mockFn`. Non-nil `timeout` will override the default setting of
 // Bigtable client. The test proxy's response will be returned.
-func runMutateRowTest(
+func doMutateRowOp(
 	t *testing.T,
 	mockFn func(context.Context, *btpb.MutateRowRequest) (*btpb.MutateRowResponse, error),
 	req *testproxypb.MutateRowRequest, timeout *durationpb.Duration) *testproxypb.MutateRowResult {
@@ -167,10 +168,10 @@ func runMutateRowTest(
 	return res
 }
 
-// runMutateRowsTest performs a MutateRows operation using the test proxy request `req` and the
+// doMutateRowsOp performs a MutateRows operation using the test proxy request `req` and the
 // Bigtable server mock function `mockFn`. Non-nil `timeout` will override the default setting of
 // Bigtable client. The test proxy's response will be returned.
-func runMutateRowsTest(
+func doMutateRowsOp(
 	t *testing.T,
 	mockFn func(*btpb.MutateRowsRequest, btpb.Bigtable_MutateRowsServer) error,
 	req *testproxypb.MutateRowsRequest, timeout *durationpb.Duration) *testproxypb.MutateRowsResult {
@@ -199,10 +200,10 @@ func runMutateRowsTest(
 	return res
 }
 
-// runSampleRowKeysTest performs a SampleRowKeys operation using the test proxy request `req` and the
+// doSampleRowKeysOp performs a SampleRowKeys operation using the test proxy request `req` and the
 // Bigtable server mock function `mockFn`. Non-nil `timeout` will override the default setting of
 // Bigtable client. The test proxy's response will be returned.
-func runSampleRowKeysTest(
+func doSampleRowKeysOp(
 	t *testing.T,
 	mockFn func(*btpb.SampleRowKeysRequest, btpb.Bigtable_SampleRowKeysServer) error,
 	req *testproxypb.SampleRowKeysRequest, timeout *durationpb.Duration) *testproxypb.SampleRowKeysResult {
@@ -231,10 +232,10 @@ func runSampleRowKeysTest(
 	return res
 }
 
-// runCheckAndMutateRowTest performs a CheckAndMutateRow operation using the test proxy request `req`
+// doCheckAndMutateRowOp performs a CheckAndMutateRow operation using the test proxy request `req`
 // and the Bigtable server mock function `mockFn`. Non-nil `timeout` will override the default
 // setting of Bigtable client. The test proxy's response will be returned.
-func runCheckAndMutateRowTest(
+func doCheckAndMutateRowOp(
 	t *testing.T,
 	mockFn func(context.Context, *btpb.CheckAndMutateRowRequest) (*btpb.CheckAndMutateRowResponse, error),
 	req *testproxypb.CheckAndMutateRowRequest, timeout *durationpb.Duration) *testproxypb.CheckAndMutateRowResult {
@@ -263,13 +264,18 @@ func runCheckAndMutateRowTest(
 	return res
 }
 
-// runReadModifyWriteRowTest performs a ReadModifyWriteRow operation using the test proxy request
-// `req` and the Bigtable server mock function `mockFn`. Non-nil `timeout` will override the
-// default setting of Bigtable client. The test proxy's response will be returned.
-func runReadModifyWriteRowTest(
+// doReadModifyWriteRowOps performs ReadModifyWriteRow operations using the test proxy requests
+// `reqs` and the mock server function `mockFn`. Non-nil `timeout` will override the default setting
+// of Cloud Bigtable client. The test proxy results will be returned, where nil element indicates
+// proxy failure.
+func doReadModifyWriteRowOps(
 	t *testing.T,
 	mockFn func(context.Context, *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error),
-	req *testproxypb.ReadModifyWriteRowRequest, timeout *durationpb.Duration) *testproxypb.RowResult {
+	reqs []*testproxypb.ReadModifyWriteRowRequest,
+	timeout *durationpb.Duration) []*testproxypb.RowResult {
+	if len(reqs) == 0 {
+		return nil
+	}
 
 	// Initialize a mock server with mockFn
 	server, err := NewServer(mockServerAddr)
@@ -282,15 +288,45 @@ func runReadModifyWriteRowTest(
 	server.Start()
 	defer server.Close()
 
-	// Create a CBT client in the test proxy
-	createCbtClient(t, req.GetClientId(), server.Addr, timeout)
-	defer removeCbtClient(t, req.GetClientId())
+	// Create a CBT client in the test proxy. The other requests should use the same client,
+	// otherwise, there will be fatal failure.
+	clientID := reqs[0].GetClientId()
+	createCbtClient(t, clientID, server.Addr, timeout)
+	defer removeCbtClient(t, clientID)
 
-	// Ask the CBT client to do CheckAndMutateRow via the test proxy
-	res, err := testProxyClient.ReadModifyWriteRow(context.Background(), req)
-	if err != nil {
-		t.Fatalf("ReadModifyWriteRow request to test proxy failed: %v", err)
+	// Ask the CBT client to do ReadModifyWriteRow via the test proxy
+	var wg sync.WaitGroup
+	results := make([]*testproxypb.RowResult, len(reqs))
+	for i := range reqs {
+		if reqs[i].GetClientId() != clientID {
+			t.Fatalf("Proxy requests in a test case should use the same client ID")
+		}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			res, err := testProxyClient.ReadModifyWriteRow(context.Background(), reqs[i])
+			if err == nil {
+				results[i] = res
+			} else {
+				t.Logf("The RPC to test proxy encountered error: %v", err)
+				results[i] = nil
+			}
+		}(i)
 	}
+	wg.Wait()
 
-	return res
+	return results
+}
+
+// doReadModifyWriteRowOp performs a ReadModifyWriteRow operation using the test proxy request `req`
+// and the mock server function `mockFn`. Non-nil `timeout` will override the default setting of
+// Cloud Bigtable client. The test proxy result will be returned, where nil value indicates proxy
+// failure.
+func doReadModifyWriteRowOp(
+	t *testing.T,
+	mockFn func(context.Context, *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error),
+	req *testproxypb.ReadModifyWriteRowRequest,
+	timeout *durationpb.Duration) *testproxypb.RowResult {
+	results := doReadModifyWriteRowOps(t, mockFn, []*testproxypb.ReadModifyWriteRowRequest{req}, timeout)
+	return results[0]
 }
