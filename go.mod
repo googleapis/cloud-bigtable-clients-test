@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/golang/protobuf v1.5.2
-	github.com/google/go-cmp v0.5.8
+	github.com/google/go-cmp v0.5.9
 	github.com/stretchr/testify v1.8.0
 	google.golang.org/genproto v0.0.0-20220908141613-51c1cc9bc6d0
 	google.golang.org/grpc v1.49.0
