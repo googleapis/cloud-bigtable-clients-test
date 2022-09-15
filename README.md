@@ -15,7 +15,10 @@ assume you are using Linux.
 The test framework consists of three components: test cases, test proxy, and mock server.
 With the client library involved, we use the diagram below to illustrate the life of a test case.
 
-![Diagram](docs/diagram.png){style="display:block;margin:auto;width:40rem"}
+<p align="center">
+<img src="docs/diagram.png" width="80%">
+</p>
+
 
 The test case first starts a mock server, then sends a test request through the test proxy,
 and tears down the mock server after finish.
