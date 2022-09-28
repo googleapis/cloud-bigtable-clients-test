@@ -16,8 +16,10 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/golang/protobuf/ptypes/wrappers"
@@ -27,6 +29,7 @@ import (
 	gs "google.golang.org/grpc/status"
 )
 
+var rowKeyPrefixRegex = regexp.MustCompile("^op[0-9]+-")
 var serverLogger *log.Logger = log.New(os.Stderr, "[Servr log] ", log.Flags())
 
 func sleepFor(duration string) {
@@ -43,39 +46,113 @@ func sleepFor(duration string) {
 	}
 }
 
-// mockReadRowsFn returns a mock implementation of server-side ReadRows().
-// The behavior is customized by `actions` which will be validated to avoid misuse of "Drop" status.
-// Non-nil `records` will be used to log the requests (including retries) received by the server in
-// time order, up to its allocated capacity.
-func mockReadRowsFn(records chan<- *readRowsReqRecord, actions ...readRowsAction) func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error {
-	// Enqueue the actions, and server will consume the queue via FIFO.
-	actionQueue := make(chan *readRowsAction, len(actions))
-	for i := range actions {
-		for _, chunk := range actions[i].chunks {
-			if len(chunk.rowKey) == 0 && chunk.status == Drop {
-				log.Fatal("Drop status cannot be applied to empty-rowkey chunk")
-			}
-		}
-		actionQueue <- &actions[i]
+// expandDim inserts a length 1 dimension to the input array, and returns the resultant 2-D array.
+// Input: [a1_for_req1, a2_for_req2, ..., aN_for_reqN] -- There is one action per request.
+// Output: [[a1_for_req1], [a2_for_req2], ..., [aN_for_reqN]]
+//         -- There is one action sequence per request, and each sequence only contains one element.
+func expandDim[A anyAction](actions []A) [][]A {
+	actionSequences := make([][]A, len(actions))
+	for i, action := range actions {
+		actionSequences[i] = []A{action}
 	}
-	close(actionQueue)
+	return actionSequences
+}
+
+// buildActionMap builds a map from rowkey prefix "optX-" to the relevant action sequence.
+// In the process, validation is performed on each action.
+func buildActionMap[A anyAction](opIDToActionQueue map[string]chan A, actionSequences [][]A) {
+	for opID, actionSequence := range actionSequences {
+		// Convert the action sequence to a queue for server to consume.
+		actionQueue := make(chan A, len(actionSequence))
+		for _, action := range actionSequence {
+			action.Validate()
+			actionQueue <- action
+		}
+		close(actionQueue)
+		opIDToActionQueue[fmt.Sprintf("op%d-", opID)] = actionQueue
+	}
+}
+
+// saveReqRecord saves the `record` by pushing it to `recorder`.
+func saveReqRecord[R anyRecord](recorder chan<- R, record R) {
+	if recorder != nil {
+		select {
+		case recorder <- record:
+		default:
+			serverLogger.Printf("Request is not saved as the recorder runs out of capacity: %d", cap(recorder))
+		}
+	}
+}
+
+// retrieveActions returns server actions based on the prefix of the first rowKey in the request.
+func retrieveActions[A anyAction](opIDToActionQueue map[string]chan A, rowKey []byte) (chan A, error) {
+	// If it's for non-concurrency testing
+	if len(opIDToActionQueue) == 1 {
+		return opIDToActionQueue["op0-"], nil
+	}
+
+	// Now we know it's for concurrency testing
+	if len(rowKey) == 0 {
+		return nil, gs.Error(codes.InvalidArgument, "rowkey must be set for concurrency testing")
+	}
+
+	prefix := rowKeyPrefixRegex.Find(rowKey)
+	if prefix == nil {
+		return nil, gs.Error(codes.InvalidArgument, "rowkey must have prefix opX-")
+	}
+
+	var ok bool
+	var actionQueue chan A
+	if actionQueue, ok = opIDToActionQueue[string(prefix)]; !ok {
+		return nil, gs.Error(codes.InvalidArgument, "Didn't find actions with key " + string(prefix))
+	}
+
+	return actionQueue, nil
+}
+
+// mockReadRowsFnSimple is a simple wrapper of mockReadRowsFn. It's useful when server only performs
+// one action per request, as users don't need to assemble an array of actions per request.
+func mockReadRowsFnSimple(recorder chan<- *readRowsReqRecord, actions ...*readRowsAction) func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error {
+	actionSequences := expandDim(actions)
+	return mockReadRowsFn(recorder, actionSequences...)
+}
+
+// mockReadRowsFn returns a mock implementation of server-side ReadRows(). The behavior is
+// customized by `actionSequences`. Non-nil `recorder` will be used to log the requests
+// (including retries) received by the server in time order, up to its capacity.
+// For concurrency testing, each request MUST have prefix "opX-" in the row key(s), indicating
+// that the X-th (zero based) actionSequence will be used to serve the request.
+func mockReadRowsFn(recorder chan<- *readRowsReqRecord, actionSequences ...[]*readRowsAction) func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error {
+	// Build the map so that server can retrieve the proper action queue by key "opX-".
+	opIDToActionQueue := make(map[string]chan *readRowsAction)
+	buildActionMap(opIDToActionQueue, actionSequences)
 
 	return func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
 		}
-		if records != nil {
-			reqRecord := readRowsReqRecord{
-				req: req,
-				ts:  time.Now(),
-			}
-			select {
-			case records <- &reqRecord:
-			default:
-				serverLogger.Printf("ReadRows request is not logged as channel records is full: capacity %d", cap(records))
-			}
+
+		// Record the request
+		reqRecord := &readRowsReqRecord{
+			req: req,
+			ts:  time.Now(),
+		}
+		saveReqRecord(recorder, reqRecord)
+
+		// Select the actions to perform
+		var rowKey []byte
+		if req.GetRows() != nil && len(req.GetRows().GetRowKeys()) > 0 {
+			rowKey = req.GetRows().GetRowKeys()[0]
+		} else if len(opIDToActionQueue) > 1 {
+			return gs.Error(codes.InvalidArgument, "The ReadRows request must contain rowkeys for concurrency testing")
 		}
 
+		actionQueue, err := retrieveActions(opIDToActionQueue, rowKey)
+		if err != nil {
+			return err
+		}
+
+		// Perform the actions
 		for {
 			action, more := <-actionQueue
 			if !more {
@@ -102,6 +179,7 @@ func mockReadRowsFn(records chan<- *readRowsReqRecord, actions ...readRowsAction
 					Qualifier:       &wrappers.BytesValue{Value: []byte(chunk.qualifier)},
 					TimestampMicros: chunk.timestampMicros,
 					Value:           []byte(chunk.value),
+					ValueSize:       chunk.valueSize,
 				}
 				if chunk.status == Commit {
 					cellChunk.RowStatus = &btpb.ReadRowsResponse_CellChunk_CommitRow{CommitRow: true}
@@ -128,9 +206,11 @@ func mockReadRowsFn(records chan<- *readRowsReqRecord, actions ...readRowsAction
 }
 
 // mockSampleRowKeysFn returns a mock implementation of server-side SampleRowKeys().
-// The behavior is customized by `actions`. Non-nil `records` will be used to log the requests
+// The behavior is customized by `actions`. Non-nil `recorder` will be used to log the requests
 // (including retries) received by the server in time order, up to its allocated capacity.
-func mockSampleRowKeysFn(records chan<- *sampleRowKeysReqRecord, actions ...sampleRowKeysAction) func(*btpb.SampleRowKeysRequest, btpb.Bigtable_SampleRowKeysServer) error {
+// Unlike the other methods, the concurrency testing is quite restricted as we cannot differentiate
+// the requests by row keys (only table name is specified in the request).
+func mockSampleRowKeysFn(recorder chan<- *sampleRowKeysReqRecord, actions []sampleRowKeysAction) func(*btpb.SampleRowKeysRequest, btpb.Bigtable_SampleRowKeysServer) error {
 	// Enqueue the actions, and server will consume the queue via FIFO.
 	actionQueue := make(chan *sampleRowKeysAction, len(actions))
 	for i := range actions {
@@ -142,17 +222,13 @@ func mockSampleRowKeysFn(records chan<- *sampleRowKeysReqRecord, actions ...samp
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
 		}
-		if records != nil {
-			reqRecord := sampleRowKeysReqRecord{
-				req: req,
-				ts:  time.Now(),
-			}
-			select {
-			case records <- &reqRecord:
-			default:
-				serverLogger.Printf("SampleRowKeys request is not logged as channel records is full: capacity %d", cap(records))
-			}
+
+		// Record the request
+		reqRecord := &sampleRowKeysReqRecord{
+			req: req,
+			ts:  time.Now(),
 		}
+		saveReqRecord(recorder, reqRecord)
 
 		for {
 			action, more := <-actionQueue
@@ -170,38 +246,52 @@ func mockSampleRowKeysFn(records chan<- *sampleRowKeysReqRecord, actions ...samp
 				OffsetBytes: action.offsetBytes,
 			}
 			srv.Send(res)
+
+			if action.endOfStream {
+				return nil
+			}
 		}
 		return nil
 	}
 }
 
-// mockMutateRowFn returns a mock implementation of server-side MutateRow().
-// The behavior is customized by `actions`. Non-nil `records` will be used to log the requests
+// mockMutateRowFnSimple is a simple wrapper of mockMutateRowFn. It's useful when server only
+// performs one action per request, as users don't need to assemble an array of actions per request.
+func mockMutateRowFnSimple(recorder chan<- *mutateRowReqRecord, actions ...*mutateRowAction) func(context.Context, *btpb.MutateRowRequest) (*btpb.MutateRowResponse, error) {
+	actionSequences := expandDim(actions)
+	return mockMutateRowFn(recorder, actionSequences...)
+}
+
+// mockMutateRowFn returns a mock implementation of server-side MutateRow(). The behavior is
+// customized by `actionSequences`. Non-nil `recorder` will be used to log the requests
 // (including retries) received by the server in time order, up to its allocated capacity.
-func mockMutateRowFn(records chan<- *mutateRowReqRecord, actions ...mutateRowAction) func(context.Context, *btpb.MutateRowRequest) (*btpb.MutateRowResponse, error) {
-	// Enqueue the actions, and server will consume the queue via FIFO.
-	actionQueue := make(chan *mutateRowAction, len(actions))
-	for i := range actions {
-		actionQueue <- &actions[i]
-	}
-	close(actionQueue)
+// For concurrency testing, each request MUST have prefix "opX-" in the row key, indicating
+// that the X-th (zero based) actionSequence will be used to serve the request.
+func mockMutateRowFn(recorder chan<- *mutateRowReqRecord, actionSequences ...[]*mutateRowAction) func(context.Context, *btpb.MutateRowRequest) (*btpb.MutateRowResponse, error) {
+	// Build the map so that server can retrieve the proper action queue by key "opX-".
+	opIDToActionQueue := make(map[string]chan *mutateRowAction)
+	buildActionMap(opIDToActionQueue, actionSequences)
 
 	return func(ctx context.Context, req *btpb.MutateRowRequest) (*btpb.MutateRowResponse, error) {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
 		}
-		if records != nil {
-			reqRecord := mutateRowReqRecord{
-				req: req,
-				ts:  time.Now(),
-			}
-			select {
-			case records <- &reqRecord:
-			default:
-				serverLogger.Printf("MutateRow request is not logged as channel records is full: capacity %d", cap(records))
-			}
+
+		// Record the request
+		reqRecord := &mutateRowReqRecord{
+			req: req,
+			ts:  time.Now(),
+		}
+		saveReqRecord(recorder, reqRecord)
+
+		// Select the actions to perform
+		rowKey := req.GetRowKey()
+		actionQueue, err := retrieveActions(opIDToActionQueue, rowKey)
+		if err != nil {
+			return nil, err
 		}
 
+		// Perform the actions
 		action := <-actionQueue
 		sleepFor(action.delayStr)
 
@@ -213,33 +303,49 @@ func mockMutateRowFn(records chan<- *mutateRowReqRecord, actions ...mutateRowAct
 	}
 }
 
-// mockMutateRowsFn returns a mock implementation of server-side MutateRows().
-// The behavior is customized by `actions`. Non-nil `records` will be used to log the requests
+// mockMutateRowsFnSimple is a simple wrapper of mockMutateRowsFn. It's useful when server only
+// performs one action per request, as users don't need to assemble an array of actions per request.
+func mockMutateRowsFnSimple(recorder chan<- *mutateRowsReqRecord, actions ...*mutateRowsAction) func(*btpb.MutateRowsRequest, btpb.Bigtable_MutateRowsServer) error {
+	actionSequences := expandDim(actions)
+	return mockMutateRowsFn(recorder, actionSequences...)
+}
+
+// mockMutateRowsFn returns a mock implementation of server-side MutateRows(). The behavior is
+// customized by `actionSequences`. Non-nil `recorder` will be used to log the requests
 // (including retries) received by the server in time order, up to its allocated capacity.
-func mockMutateRowsFn(records chan<- *mutateRowsReqRecord, actions ...mutateRowsAction) func(*btpb.MutateRowsRequest, btpb.Bigtable_MutateRowsServer) error {
-	// Enqueue the actions, and server will consume the queue via FIFO.
-	actionQueue := make(chan *mutateRowsAction, len(actions))
-	for i := range actions {
-		actionQueue <- &actions[i]
-	}
-	close(actionQueue)
+// For concurrency testing, each request MUST have prefix "opX-" in the row keys, indicating
+// that the X-th (zero based) actionSequence will be used to serve the request.
+func mockMutateRowsFn(recorder chan<- *mutateRowsReqRecord, actionSequences ...[]*mutateRowsAction) func(*btpb.MutateRowsRequest, btpb.Bigtable_MutateRowsServer) error {
+	// Build the map so that server can retrieve the proper action queue by key "opX-".
+	opIDToActionQueue := make(map[string]chan *mutateRowsAction)
+	buildActionMap(opIDToActionQueue, actionSequences)
 
 	return func(req *btpb.MutateRowsRequest, srv btpb.Bigtable_MutateRowsServer) error {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
 		}
-		if records != nil {
-			reqRecord := mutateRowsReqRecord{
-				req: req,
-				ts:  time.Now(),
-			}
-			select {
-			case records <- &reqRecord:
-			default:
-				serverLogger.Printf("MutateRows request is not logged as channel records is full: capacity %d", cap(records))
-			}
+
+		// Record the request
+		reqRecord := &mutateRowsReqRecord{
+			req: req,
+			ts:  time.Now(),
+		}
+		saveReqRecord(recorder, reqRecord)
+
+		// Select the actions to perform
+		var rowKey []byte
+		if len(req.GetEntries()) > 0 {
+			rowKey = req.GetEntries()[0].GetRowKey()
+		} else if len(opIDToActionQueue) > 1 {
+			return gs.Error(codes.InvalidArgument, "The MutateRows request must contain entries for concurrency testing")
 		}
 
+		actionQueue, err := retrieveActions(opIDToActionQueue, rowKey)
+		if err != nil {
+			return err
+		}
+
+		// Perform the actions
 		for {
 			action, more := <-actionQueue
 			if !more {
@@ -278,33 +384,44 @@ func mockMutateRowsFn(records chan<- *mutateRowsReqRecord, actions ...mutateRows
 	}
 }
 
+// mockCheckAndMutateRowFnSimple is a simple wrapper of mockCheckAndMutateRowFn. It's useful when
+// server only performs one action per request, as users don't need to assemble an array of actions
+// per request.
+func mockCheckAndMutateRowFnSimple(recorder chan<- *checkAndMutateRowReqRecord, actions ...*checkAndMutateRowAction) func(context.Context, *btpb.CheckAndMutateRowRequest) (*btpb.CheckAndMutateRowResponse, error) {
+	actionSequences := expandDim(actions)
+	return mockCheckAndMutateRowFn(recorder, actionSequences...)
+}
+
 // mockCheckAndMutateRowFn returns a mock implementation of server-side CheckAndMutateRow().
-// The behavior is customized by `actions`. Non-nil `records` will be used to log the requests
-// (including retries) received by the server in time order, up to its allocated capacity.
-func mockCheckAndMutateRowFn(records chan<- *checkAndMutateRowReqRecord, actions ...checkAndMutateRowAction) func(context.Context, *btpb.CheckAndMutateRowRequest) (*btpb.CheckAndMutateRowResponse, error) {
-	// Enqueue the actions, and server will consume the queue via FIFO.
-	actionQueue := make(chan *checkAndMutateRowAction, len(actions))
-	for i := range actions {
-		actionQueue <- &actions[i]
-	}
-	close(actionQueue)
+// The behavior is customized by `actionSequences`. Non-nil `recorder` will be used to log the
+// requests (including retries) received by the server in time order, up to its allocated capacity.
+// For concurrency testing, each request MUST have prefix "opX-" in the row key, indicating
+// that the X-th (zero based) actionSequence will be used to serve the request.
+func mockCheckAndMutateRowFn(recorder chan<- *checkAndMutateRowReqRecord, actionSequences ...[]*checkAndMutateRowAction) func(context.Context, *btpb.CheckAndMutateRowRequest) (*btpb.CheckAndMutateRowResponse, error) {
+	// Build the map so that server can retrieve the proper action queue by key "opX-".
+	opIDToActionQueue := make(map[string]chan *checkAndMutateRowAction)
+	buildActionMap(opIDToActionQueue, actionSequences)
 
 	return func(ctx context.Context, req *btpb.CheckAndMutateRowRequest) (*btpb.CheckAndMutateRowResponse, error) {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
 		}
-		if records != nil {
-			reqRecord := checkAndMutateRowReqRecord{
-				req: req,
-				ts:  time.Now(),
-			}
-			select {
-			case records <- &reqRecord:
-			default:
-				serverLogger.Printf("CheckAndMutateRow request is not logged as channel records is full: capacity %d", cap(records))
-			}
+
+		// Record the request
+		reqRecord := &checkAndMutateRowReqRecord{
+			req: req,
+			ts:  time.Now(),
+		}
+		saveReqRecord(recorder, reqRecord)
+
+		// Select the actions to perform
+		rowKey := req.GetRowKey()
+		actionQueue, err := retrieveActions(opIDToActionQueue, rowKey)
+		if err != nil {
+			return nil, err
 		}
 
+		// Perform the action
 		action := <-actionQueue
 		sleepFor(action.delayStr)
 
@@ -316,33 +433,43 @@ func mockCheckAndMutateRowFn(records chan<- *checkAndMutateRowReqRecord, actions
 	}
 }
 
+// mockReadModifyWriteRowFnSimple is a simple wrapper of mockReadModifyWriteRowFn. It's useful when
+// server only performs one action per request, as users don't need to assemble an array of actions
+// per request.
+func mockReadModifyWriteRowFnSimple(recorder chan<- *readModifyWriteRowReqRecord, actions ...*readModifyWriteRowAction) func(context.Context, *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error) {
+	actionSequences := expandDim(actions)
+	return mockReadModifyWriteRowFn(recorder, actionSequences...)
+}
+
 // mockReadModifyWriteRowFn returns a mock implementation of server-side ReadModifyWriteRow().
-// The behavior is customized by `actions`. Non-nil `records` will be used to log the requests
-// (including retries) received by the server in time order, up to its allocated capacity.
-func mockReadModifyWriteRowFn(records chan<- *readModifyWriteRowReqRecord, actions ...readModifyWriteRowAction) func(context.Context, *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error) {
-	// Enqueue the actions, and server will consume the queue via FIFO.
-	actionQueue := make(chan *readModifyWriteRowAction, len(actions))
-	for i := range actions {
-		actionQueue <- &actions[i]
-	}
-	close(actionQueue)
+// The behavior is customized by `actionSequences`. Non-nil `recorder` will be used to log the
+// requests (including retries) received by the server in time order, up to its allocated capacity.
+// For concurrency testing, each request MUST have prefix "opX-" in the row key, indicating
+// that the X-th (zero based) actionSequence will be used to serve the request.
+func mockReadModifyWriteRowFn(recorder chan<- *readModifyWriteRowReqRecord, actionSequences ...[]*readModifyWriteRowAction) func(context.Context, *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error) {
+	opIDToActionQueue := make(map[string]chan *readModifyWriteRowAction)
+	buildActionMap(opIDToActionQueue, actionSequences)
 
 	return func(ctx context.Context, req *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error) {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
 		}
-		if records != nil {
-			reqRecord := readModifyWriteRowReqRecord{
-				req: req,
-				ts:  time.Now(),
-			}
-			select {
-			case records <- &reqRecord:
-			default:
-				serverLogger.Printf("ReadModifyWriteRow request is not logged as channel records is full: capacity %d", cap(records))
-			}
+
+		// Record the request
+		reqRecord := &readModifyWriteRowReqRecord{
+			req: req,
+			ts:  time.Now(),
+		}
+		saveReqRecord(recorder, reqRecord)
+
+		// Select the actions to perform
+		rowKey := req.GetRowKey()
+		actionQueue, err := retrieveActions(opIDToActionQueue, rowKey)
+		if err != nil {
+			return nil, err
 		}
 
+		// Perform the action
 		action := <-actionQueue
 		sleepFor(action.delayStr)
 		if action.rpcError != codes.OK {

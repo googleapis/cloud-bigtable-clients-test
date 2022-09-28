@@ -16,7 +16,6 @@ package tests
 
 import (
 	"encoding/binary"
-	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -112,9 +111,9 @@ func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 	clientReq := dummyReadModifyWriteRowRequest("table", rowKey, increments, appends)
 
 	// 1. Instantiate the mockserver function
-	records := make(chan *readModifyWriteRowReqRecord, 1)
-	action := readModifyWriteRowAction{row: dummyResultRow(rowKey, increments, appends)}
-	mockFn := mockReadModifyWriteRowFn(records, action)
+	recorder := make(chan *readModifyWriteRowReqRecord, 1)
+	action := &readModifyWriteRowAction{row: dummyResultRow(rowKey, increments, appends)}
+	mockFn := mockReadModifyWriteRowFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadModifyWriteRowRequest{
@@ -126,9 +125,8 @@ func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 	res := doReadModifyWriteRowOp(t, mockFn, &req, nil)
 
 	// 4. Check that the dummy request is sent and the dummy row is returned
-	assert.NotEmpty(t, res)
-	assert.Empty(t, res.GetStatus().GetCode())
-	loggedReq := <- records
+	checkResultOkStatus(t, res)
+	loggedReq := <- recorder
 	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
 		t.Errorf("diff found (-want +got):\n%s", diff)
 	}
@@ -137,23 +135,24 @@ func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 	assert.Equal(t, "str1" + "str2", string(res.Row.Families[0].Columns[1].Cells[0].Value))
 }
 
-// TestReadModifyWriteRow_NoRetry_MultiStreams tests that client can have multiple concurrent streams.
-func TestReadModifyWriteRow_NoRetry_MultiStreams(t *testing.T) {
+// TestReadModifyWriteRow_Generic_MultiStreams tests that client can have multiple concurrent streams.
+func TestReadModifyWriteRow_Generic_MultiStreams(t *testing.T) {
 	// 0. Common variables
 	increments := []int64{10, 2}
 	appends := []string{"append"}
-	rowKeys := []string{"row-01", "row-02", "row-03", "row-04", "row-05"}
+	rowKeys := []string{"op0-row", "op1-row", "op2-row", "op3-row", "op4-row"}
 	concurrency := len(rowKeys)
+	const requestRecorderCapacity = 10
 
 	// 1. Instantiate the mockserver function
-	records := make(chan *readModifyWriteRowReqRecord, concurrency + 1)
-	actions := make([]readModifyWriteRowAction, concurrency)
+	recorder := make(chan *readModifyWriteRowReqRecord, requestRecorderCapacity)
+	actions := make([]*readModifyWriteRowAction, concurrency)
 	for i := 0; i < concurrency; i++ {
-		actions[i] = readModifyWriteRowAction{
+		actions[i] = &readModifyWriteRowAction{
 			row: dummyResultRow([]byte(rowKeys[i]), increments, appends),
 			delayStr: "2s"}
 	}
-	mockFn := mockReadModifyWriteRowFn(records, actions...)
+	mockFn := mockReadModifyWriteRowFnSimple(recorder, actions...)
 
 	// 2. Build the requests to test proxy
 	reqs := make([]*testproxypb.ReadModifyWriteRowRequest, concurrency)
@@ -170,26 +169,14 @@ func TestReadModifyWriteRow_NoRetry_MultiStreams(t *testing.T) {
 
 	// 4a. Check that all the requests succeeded
 	assert.Equal(t, concurrency, len(results))
-	for i := 0; i < concurrency; i++ {
-		res := results[i]
-		assert.NotEmpty(t, res)
-		assert.Empty(t, res.GetStatus().GetCode())
-	}
+	checkResultOkStatus(t, results...)
 
 	// 4b. Check that the timestamps of requests should be very close
-	assert.Equal(t, concurrency, len(records))
-	minTsMs := int64(math.MaxInt64)
-	maxTsMs := int64(math.MinInt64)
+	assert.Equal(t, concurrency, len(recorder))
+	checkRequestsAreWithin(t, 1000, recorder)
+
+	// 4c. Check the row keys in the results.
 	for i := 0; i < concurrency; i++ {
-		loggedReq := <- records
-		ts := loggedReq.ts.UnixMilli()
-		if (minTsMs > ts) {
-			minTsMs = ts
-		}
-		if (maxTsMs < ts) {
-			maxTsMs = ts
-		}
+		assert.Equal(t, rowKeys[i], string(results[i].Row.Key))
 	}
-	t.Logf("The requests were received within %dms", maxTsMs - minTsMs)
-	assert.Less(t, maxTsMs - minTsMs, int64(1000))
 }

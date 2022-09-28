@@ -53,9 +53,9 @@ func dummyMutateRowRequest(tableID string, rowKey []byte, numMutations int) *btp
 // TestMutateRow_NoRetry_NonprintableByteKey tests that client can specify non-printable byte strings as row key.
 func TestMutateRow_NoRetry_NonprintableByteKey(t *testing.T) {
 	// 1. Instantiate the mock function
-	records := make(chan *mutateRowReqRecord, 1)
-	action := mutateRowAction{}
-	mockFn := mockMutateRowFn(records, action)
+	recorder := make(chan *mutateRowReqRecord, 1)
+	action := &mutateRowAction{}
+	mockFn := mockMutateRowFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	// Set the nonprintable row key according to https://www.utf8-chartable.de/unicode-utf8-table.pl
@@ -72,17 +72,17 @@ func TestMutateRow_NoRetry_NonprintableByteKey(t *testing.T) {
 	res := doMutateRowOp(t, mockFn, &req, nil)
 
 	// 4. Check that the operation succeeded
-	loggedReq := <- records
+	checkResultOkStatus(t, res)
+	loggedReq := <- recorder
 	assert.Equal(t, 0, bytes.Compare(nonprintableByteKey, loggedReq.req.RowKey))
-	assert.Empty(t, res.GetStatus().GetCode())
 }
 
 // TestMutateRow_NoRetry_MultipleMutations tests that client can specify multiple mutations for a row.
 func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
 	// 1. Instantiate the mock function
-	records := make(chan *mutateRowReqRecord, 1)
-	action := mutateRowAction{}
-	mockFn := mockMutateRowFn(records, action)
+	recorder := make(chan *mutateRowReqRecord, 1)
+	action := &mutateRowAction{}
+	mockFn := mockMutateRowFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowRequest{
@@ -94,7 +94,45 @@ func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
 	res := doMutateRowOp(t, mockFn, &req, nil)
 
 	// 4. Check that the operation succeeded
-	loggedReq := <- records
+	checkResultOkStatus(t, res)
+	loggedReq := <- recorder
 	assert.Equal(t, 2, len(loggedReq.req.Mutations))
-	assert.Empty(t, res.GetStatus().GetCode())
+}
+
+// TestMutateRow_Generic_MultiStreams tests that client can have multiple concurrent streams.
+func TestMutateRow_Generic_MultiStreams(t *testing.T) {
+	// 0. Common variable
+	rowKeys := []string{"op0-row", "op1-row", "op2-row", "op3-row", "op4-row"}
+	concurrency := len(rowKeys)
+	const requestRecorderCapacity = 10
+
+	// 1. Instantiate the mockserver function
+	recorder := make(chan *mutateRowReqRecord, requestRecorderCapacity)
+	actions := make([]*mutateRowAction, concurrency)
+	for i := 0; i < concurrency; i++ {
+		// Each request will succeed after delay.
+		actions[i] = &mutateRowAction{delayStr: "2s"}
+	}
+	mockFn := mockMutateRowFnSimple(recorder, actions...)
+
+	// 2. Build the requests to test proxy
+	reqs := make([]*testproxypb.MutateRowRequest, concurrency)
+	for i := 0; i < concurrency; i++ {
+		clientReq := dummyMutateRowRequest("table", []byte(rowKeys[i]), 1)
+		reqs[i] = &testproxypb.MutateRowRequest{
+			ClientId: t.Name(),
+			Request:  clientReq,
+		}
+	}
+
+	// 3. Perform the operations via test proxy
+	results := doMutateRowOps(t, mockFn, reqs, nil)
+
+	// 4a. Check that all the requests succeeded
+	assert.Equal(t, concurrency, len(results))
+	checkResultOkStatus(t, results...)
+
+	// 4b. Check that the timestamps of requests should be very close
+	assert.Equal(t, concurrency, len(recorder))
+	checkRequestsAreWithin(t, 1000, recorder)
 }

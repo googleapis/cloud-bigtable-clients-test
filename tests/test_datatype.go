@@ -23,9 +23,12 @@
 package tests
 
 import (
+	"log"
 	"time"
 
+	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 )
 
@@ -71,47 +74,63 @@ type chunkData struct {
 	qualifier       string
 	timestampMicros int64
 	value           string
+	valueSize       int32
 	status          RowStatus
 }
 
-// readRowsAction denotes an error or a datapoint in the response stream for a ReadRows request.
-// Although Client provides both ReadRow() and ReadRows(), server only provides ReadRows() to
-// handle them both. So we don't have readRowAction defined. Usage:
-//    1. readRowsAction{chunks: data}
-//       Effect: server will return ReadRowsResponse based on the given chunks.
-//    2. readRowsAction{chunks: data, delayStr: delay}
-//       Effect: server will return ReadRowsResponse based on the given chunks after delay.
-//    3. readRowsAction{rpcError: error}
-//       Effect: server will return an error. Any chunks that are specified will be ignored.
-//    4. readRowsAction{rpcError: error, delayStr: delay}
-//       Effect: server will return an error after delay. Any chunks that are specified will be ignored.
-//    5. To combine chunks with errors, a sequence of actions should be constructed.
+// readRowsAction denotes an error or a response in the response stream for a ReadRows request.
+// Although Client provides both ReadRow() and ReadRows(), server only uses ReadRows() to handle
+// them both. Therefore, we don't define readRowAction.
+// Usage:
+//  1. readRowsAction{chunks: data}
+//     Effect: server will return the chunks, and there may be more to come.
+//  2. readRowsAction{chunks: data, delayStr: delay}
+//     Effect: server will return the chunks after delay, and there may be more to come.
+//  3. readRowsAction{rpcError: error}
+//     Effect: server will return an error. chunks that are specified in the same action will be ignored.
+//  4. readRowsAction{rpcError: error, delayStr: delay}
+//     Effect: server will return an error after delay. chunks that are specified in the same action will be ignored.
+//  5. To have a response stream with/without errors, a sequence of actions should be constructed.
 type readRowsAction struct {
 	chunks   []chunkData
 	rpcError codes.Code
-	delayStr string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	delayStr string  // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+}
+func (a *readRowsAction) Validate() {
+	for _, chunk := range a.chunks {
+		if len(chunk.rowKey) == 0 && chunk.status == Drop {
+			log.Fatal("Drop status cannot be applied to an empty-rowkey chunk")
+		}
+	}
 }
 
-// sampleRowKeysAction denotes an error or a datapoint in the response stream for a SampleRowKeys request.
+// sampleRowKeysAction denotes an error or a response in the response stream for a SampleRowKeys request.
 // Usage:
 //  1. sampleRowKeysAction{rowKey: key, offsetBytes: bytes}
-//     Effect: server will return a SampleRowKeysResponse using the given row key and offset bytes.
+//     Effect: server will return a sampled row key with offset, and there may be more to come.
 //  2. sampleRowKeysAction{rowKey: key, offsetBytes: bytes, delayStr: delay}
-//     Effect: server will return a SampleRowKeysResponse using the given row key and offset bytes after delay.
-//  3. sampleRowKeysAction{rpcError: error}
-//     Effect: server will return an error. Any rowKey/offsetBytes that are specified will be ignored.
-//  4. sampleRowKeysAction{rpcError: error, delayStr: delay}
-//     Effect: server will return an error after delay. Any rowKey/offsetBytes that are specified will be ignored.
-//  5. To combine rowKey/offsetBytes with errors, a sequence of actions should be constructed.
+//     Effect: server will return a sampled row key with offset after delay, and there may be more to come.
+//  3. sampleRowKeysAction{rowKey: key, offsetBytes: bytes, endOfStream: true}
+//     Effect: server will return the last sampled row key with offset.
+//  4. sampleRowKeysAction{rowKey: key, offsetBytes: bytes, endOfStream: true, delayStr: delay}
+//     Effect: server will return the last sampled row key with offset after delay.
+//  5. sampleRowKeysAction{rpcError: error}
+//     Effect: server will return an error. rowKey and offsetBytes that are specified in the same action will be ignored.
+//  6. sampleRowKeysAction{rpcError: error, delayStr: delay}
+//     Effect: server will return an error after delay. rowKey and offsetBytes that are specified in the same action will be ignored.
+//  7. To have a response stream with/without errors, a sequence of actions should be constructed.
+//  8. "endOfStream = true" is used only for concurrency testing.
 type sampleRowKeysAction struct {
 	rowKey      []byte
 	offsetBytes int64
+	endOfStream bool   // If true, server will conclude the serving stream for the request.
 	rpcError    codes.Code
 	delayStr    string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 }
 
 // mutateRowAction tells the mock server how to respond to a MutateRow request.
-// There is no response stream. Usage:
+// There is no response stream, so server will conclude serving after performing an action.
+// Usage:
 //  1. mutateRowAction{}
 //     Effect: server will mutate the row successfully (no return value needed).
 //  2. mutateRowAction{delayStr: delay}
@@ -120,26 +139,28 @@ type sampleRowKeysAction struct {
 //     Effect: server will return an error.
 //  4. mutateRowAction{rpcError: error, delayStr: delay}
 //     Effect: server will return an error after delay.
+//  5. To have a successful mutation after transient errors, a sequence of actions should be constructed.
 type mutateRowAction struct {
 	rpcError codes.Code
 	delayStr string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 }
+func (a *mutateRowAction) Validate() {}
 
 // entryData represents a simplified version of []btpb.MutateRowsResponse_Entry to facilitate
-// test writing. The entryData may contain the results of a subset of row mutations. Note that
-// the indices correspond to the requested row mutations, so the same row mutation may be given
+// test writing. The entryData contain a subset of results for bulk mutation request. Note that
+// the indices correspond to the requested row mutations, so the same row mutation may have
 // different indices in the retries.
 type entryData struct {
 	mutatedRows []int                // Indices of rows mutated
 	failedRows  map[codes.Code][]int // Indices of failed rows, along with their error codes
 }
 
-// mutateRowsAction denotes a datapoint in the response stream for a MutateRows request.
+// mutateRowsAction denotes a response in the response stream for a MutateRows request.
 // Usage:
 //  1. mutateRowsAction{data: data}
-//     Effect: server will return the current mutation results, and more will come.
+//     Effect: server will return the current batch of mutation results, and there may be more to come.
 //  2. mutateRowsAction{data: data, delayStr: delay}
-//     Effect: server will return the current mutation results after delay, and more will come.
+//     Effect: server will return the current batch of mutation results after delay, and there may be more to come.
 //  3. mutateRowsAction{data: data, endOfStream: true}
 //     Effect: server will return the current (also the last) batch of mutation results.
 //  4. mutateRowsAction{data: data, endOfStream: true, delayStr: delay}
@@ -148,82 +169,114 @@ type entryData struct {
 //     Effect: server will return an error, without performing any row mutation.
 //  6. mutateRowsAction{rpcError: error, delayStr: delay}
 //     Effect: server will return an error after delay, without performing any row mutation.
-//  7. To combine data with rpc errors, a sequence of actions should be constructed.
-//  8. "endOfStream = true" is not needed if there are no subsequent actions.
+//  7. To have a response stream with/without rpc errors, a sequence of actions should be constructed.
+//  8. "endOfStream = true" is not needed if there are no subsequent actions for a request.
 type mutateRowsAction struct {
 	data        entryData
-	endOfStream bool       // If set, server will conclude the serving stream for the request.
-	rpcError    codes.Code // The error is not specific to a particular row (unlike the other methods).
+	endOfStream bool       // If set, server will conclude the serving for the request.
+	rpcError    codes.Code // The error is not specific to a particular row (we use entryData instead).
 	delayStr    string     // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 }
+func (a *mutateRowsAction) Validate() {}
 
 // checkAndMutateRowAction tells the mock server how to respond to a CheckAndMutateRow request.
-// There is no response stream. Usage:
+// There is no response stream, so server will conclude serving after performing an action.
+// Usage:
 //  1. checkAndMutateRowAction{predicateMatched: result}
 //     Effect: server will return the predicate match result.
 //  2. checkAndMutateRowAction{predicateMatched: row, delayStr: delay}
 //     Effect: server will return the predicate match result after delay.
 //  3. checkAndMutateRowAction{rpcError: error}
-//     Effect: server will return an error. Any specified predicateMatched will be ignored.
+//     Effect: server will return an error. Any specified predicateMatched in the same action will be ignored.
 //  4. checkAndMutateRowAction{rpcError: error, delayStr: delay}
-//     Effect: server will return an error after delay. Any specified predicateMatched will be ignored.
-//  5. To combine predicateMatched with errors, a sequence of actions should be constructed.
+//     Effect: server will return an error after delay. Any specified predicateMatched in the same action will be ignored.
+//  5. To have a successful action after transient errors, a sequence of actions should be constructed.
 type checkAndMutateRowAction struct {
 	predicateMatched bool
 	rpcError         codes.Code
 	delayStr         string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 }
+func (a *checkAndMutateRowAction) Validate() {}
 
 // readModifyWriteRowAction tells the mock server how to respond to a ReadModifyWriteRow request.
-// There is no response stream. Usage:
+// There is no response stream, so server will conclude serving after performing an action.
+// Usage:
 //  1. readModifyWriteRowAction{row: row}
 //     Effect: server will return the updated row.
 //  2. readModifyWriteRowAction{row: row, delayStr: delay}
 //     Effect: server will return the updated row after delay.
 //  3. readModifyWriteRowAction{rpcError: error}
-//     Effect: server will return an error. Any specified row will be ignored.
+//     Effect: server will return an error. Any specified row in the same action will be ignored.
 //  4. readModifyWriteRowAction{rpcError: error, delayStr: delay}
-//     Effect: server will return an error after delay. Any specified row will be ignored.
-//  5. To combine row with errors, a sequence of actions should be constructed.
+//     Effect: server will return an error after delay. Any specified row in the same action will be ignored.
+//  5. To have a successful action after transient errors, a sequence of actions should be constructed.
 type readModifyWriteRowAction struct {
 	row      *btpb.Row
 	rpcError codes.Code
 	delayStr string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 }
+func (a *readModifyWriteRowAction) Validate() {}
 
 // readRowsReqRecord allows the mock server to record the received ReadRowsRequest with timestamp.
 type readRowsReqRecord struct {
 	req *btpb.ReadRowsRequest
 	ts  time.Time
 }
+func (r *readRowsReqRecord) GetTs() time.Time {return r.ts}
 
 // sampleRowKeysReqRecord allows the mock server to record the received SampleRowKeysRequest with timestamp.
 type sampleRowKeysReqRecord struct {
 	req *btpb.SampleRowKeysRequest
 	ts  time.Time
 }
+func (r *sampleRowKeysReqRecord) GetTs() time.Time {return r.ts}
 
 // mutateRowReqRecord allows the mock server to record the received MutateRowRequest with timestamp.
 type mutateRowReqRecord struct {
 	req *btpb.MutateRowRequest
 	ts  time.Time
 }
+func (r *mutateRowReqRecord) GetTs() time.Time {return r.ts}
 
 // mutateRowsReqRecord allows the mock server to record the received MutateRowsRequest with timestamp.
 type mutateRowsReqRecord struct {
 	req *btpb.MutateRowsRequest
 	ts  time.Time
 }
+func (r *mutateRowsReqRecord) GetTs() time.Time {return r.ts}
 
 // checkAndMutateRowReqRecord allows the mock server to record the received CheckAndMutateRowRequest with timestamp.
 type checkAndMutateRowReqRecord struct {
 	req *btpb.CheckAndMutateRowRequest
 	ts  time.Time
 }
+func (r *checkAndMutateRowReqRecord) GetTs() time.Time {return r.ts}
 
 // readModifyWriteRowReqRecord allows the mock server to record the received ReadModifyWriteRowRequest with timestamp.
 type readModifyWriteRowReqRecord struct {
 	req *btpb.ReadModifyWriteRowRequest
 	ts  time.Time
 }
+func (r *readModifyWriteRowReqRecord) GetTs() time.Time {return r.ts}
 
+// anyResult is an interface type that works for the result types of test proxy.
+type anyResult interface {
+	*testproxypb.RowResult | *testproxypb.RowsResult | *testproxypb.MutateRowResult |
+	*testproxypb.MutateRowsResult | *testproxypb.SampleRowKeysResult |
+	*testproxypb.CheckAndMutateRowResult
+	GetStatus() *status.Status
+}
+
+// anyRecord is an interface type that works for the record types defined above.
+type anyRecord interface {
+	*readRowsReqRecord | *sampleRowKeysReqRecord | *mutateRowReqRecord | *mutateRowsReqRecord |
+	*checkAndMutateRowReqRecord | *readModifyWriteRowReqRecord
+	GetTs() time.Time
+}
+
+// anyAction is an interface type that works for the action types of mock server, except for sampleRowKeysAction.
+type anyAction interface {
+	*readRowsAction | *mutateRowAction | *mutateRowsAction |
+	*checkAndMutateRowAction | *readModifyWriteRowAction
+	Validate()
+}
