@@ -20,6 +20,7 @@ import (
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/grpc/codes"
 )
 
 // dummyCheckAndMutateRowRequest returns a dummy CheckAndMutateRowRequest. For simplicity,
@@ -149,3 +150,33 @@ func TestCheckAndMutateRow_Generic_MultiStreams(t *testing.T) {
 		assert.Equal(t, predicateMatched[i], results[i].Result.PredicateMatched)
 	}
 }
+
+// TestCheckAndMutateRow_NoRetry_TransientError tests that client doesn't retry on transient errors.
+func TestCheckAndMutateRow_NoRetry_TransientError(t *testing.T) {
+	// 0. Common variables
+	const predicateMatched bool = false
+	rowKey := []byte("row-01")
+
+	// 1. Instantiate the mockserver function
+	records := make(chan *checkAndMutateRowReqRecord, 2)
+	actions := []*checkAndMutateRowAction{
+		&checkAndMutateRowAction{rpcError: codes.Unavailable},
+		&checkAndMutateRowAction{predicateMatched: predicateMatched},
+	}
+	mockFn := mockCheckAndMutateRowFn(records, actions)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.CheckAndMutateRowRequest{
+		ClientId: t.Name(),
+		Request:  dummyCheckAndMutateRowRequest("table", rowKey, predicateMatched, 2),
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doCheckAndMutateRowOp(t, mockFn, &req, nil)
+
+	// 4. Check that the result has error, and there is no retry
+	assert.NotEmpty(t, res)
+	assert.Equal(t, int32(codes.Unavailable), res.GetStatus().GetCode())
+	assert.Equal(t, 1, len(records))
+}
+

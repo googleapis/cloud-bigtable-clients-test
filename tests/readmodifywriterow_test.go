@@ -22,6 +22,7 @@ import (
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -180,3 +181,35 @@ func TestReadModifyWriteRow_Generic_MultiStreams(t *testing.T) {
 		assert.Equal(t, rowKeys[i], string(results[i].Row.Key))
 	}
 }
+
+// TestReadModifyWriteRow_NoRetry_TransientError tests that client doesn't retry on transient errors.
+func TestReadModifyWriteRow_NoRetry_TransientError(t *testing.T) {
+	// 0. Common variables
+	increments := []int64{10, 2}
+	appends := []string{"str1", "str2"}
+	rowKey := []byte("row-01")
+	clientReq := dummyReadModifyWriteRowRequest("table", rowKey, increments, appends)
+
+	// 1. Instantiate the mockserver function
+	records := make(chan *readModifyWriteRowReqRecord, 2)
+	actions := []*readModifyWriteRowAction{
+		&readModifyWriteRowAction{rpcError: codes.Unavailable},
+		&readModifyWriteRowAction{row: dummyResultRow(rowKey, increments, appends)},
+	}
+	mockFn := mockReadModifyWriteRowFn(records, actions)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadModifyWriteRowRequest{
+		ClientId: t.Name(),
+		Request:  clientReq,
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadModifyWriteRowOp(t, mockFn, &req, nil)
+
+	// 4. Check that the result has error, and there is no retry
+	assert.NotEmpty(t, res)
+	assert.Equal(t, int32(codes.Unavailable), res.GetStatus().GetCode())
+	assert.Equal(t, 1, len(records))
+}
+

@@ -17,12 +17,15 @@ package tests
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -259,3 +262,58 @@ func TestReadRows_Generic_MultiStreams(t *testing.T) {
 		assert.Equal(t, rowKeys[i][1], string(results[i].Row[1].Key))
 	}
 }
+
+// TestReadRows_Retry_StreamReset tests that client will retry on stream reset.
+func TestReadRows_Retry_StreamReset(t *testing.T) {
+	// 0. Common variable
+	const maxConnAge = 4 * time.Second
+	const maxConnAgeGrace = time.Second
+
+	// 1. Instantiate the mock function
+	recorder := make(chan *readRowsReqRecord, 3)
+	sequence := []*readRowsAction{
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("abar", "v_a", Commit)}},
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("qbar", "v_q", Commit)},
+			delayStr: "10s"}, // Stream resets before sending chunks.
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("qbar", "v_q", Commit)}},
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("zbar", "v_z", Commit)}},
+	}
+	mockFn := mockReadRowsFn(recorder, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
+	}
+
+	// 3. Perform the operation via test proxy
+	serverOpt := grpc.KeepaliveParams(
+		keepalive.ServerParameters{
+			MaxConnectionAge:      maxConnAge,
+			MaxConnectionAgeGrace: maxConnAgeGrace,
+		})
+	res := doReadRowsOp(t, mockFn, &req, nil, serverOpt)
+
+	// 4a. Verify that rows were read successfully
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 3, len(res.GetRow()))
+	assert.Equal(t, "abar", string(res.Row[0].Key))
+	assert.Equal(t, "qbar", string(res.Row[1].Key))
+	assert.Equal(t, "zbar", string(res.Row[2].Key))
+
+	// 4b. Verify that client sent the only retry request properly
+	assert.Equal(t, 2, len(recorder))
+	loggedReq := <-recorder
+	loggedRetry := <-recorder
+	assert.Empty(t, loggedReq.req.GetRows().GetRowRanges())
+	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("abar")}))
+}
+

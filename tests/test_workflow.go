@@ -25,6 +25,7 @@ import (
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -148,14 +149,15 @@ func doReadRowsOps(
 	t *testing.T,
 	mockFn func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error,
 	reqs []*testproxypb.ReadRowsRequest,
-	timeout *durationpb.Duration) []*testproxypb.RowsResult {
+	timeout *durationpb.Duration,
+        serverOpt ...grpc.ServerOption) []*testproxypb.RowsResult {
 
 	if len(reqs) == 0 {
 		return nil
 	}
 
 	// Initialize a mock server with mockFn
-	server, err := NewServer(mockServerAddr)
+	server, err := NewServer(mockServerAddr, serverOpt...)
 	if err != nil {
 		t.Fatalf("Server initialization failed: %v", err)
 	}
@@ -202,9 +204,10 @@ func doReadRowsOp(
 	t *testing.T,
 	mockFn func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error,
 	req *testproxypb.ReadRowsRequest,
-	timeout *durationpb.Duration) *testproxypb.RowsResult {
+	timeout *durationpb.Duration,
+        serverOpt ...grpc.ServerOption) *testproxypb.RowsResult {
 
-	results := doReadRowsOps(t, mockFn, []*testproxypb.ReadRowsRequest{req}, timeout)
+	results := doReadRowsOps(t, mockFn, []*testproxypb.ReadRowsRequest{req}, timeout, serverOpt...)
 	return results[0]
 }
 
