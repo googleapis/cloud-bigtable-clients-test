@@ -31,13 +31,14 @@ import (
 
 // TestReadRow_NoRetry_PointReadDeadline tests that client will set deadline for point read.
 func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 1)
 	action := &readRowsAction{
 		chunks:   []chunkData{dummyChunkData("row-01", "v1", Commit)},
 		delayStr: "5s",
 	}
-	mockFn := mockReadRowsFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowRequest{
@@ -50,7 +51,7 @@ func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
 	timeout := durationpb.Duration{
 		Seconds: 2,
 	}
-	res := doReadRowOp(t, mockFn, &req, &timeout)
+	res := doReadRowOp(t, server, &req, &timeout)
 
 	// 4a. Check the runtime
 	curTs := time.Now()
@@ -66,7 +67,7 @@ func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
 // TestReadRow_NoRetry_CommitInSeparateChunk tests that client can have one chunk
 // with no status and subsequent chunk with a commit status.
 func TestReadRow_NoRetry_CommitInSeparateChunk(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 1)
 	action := &readRowsAction{
 		chunks: []chunkData{
@@ -74,8 +75,8 @@ func TestReadRow_NoRetry_CommitInSeparateChunk(t *testing.T) {
 			chunkData{familyName: "B", qualifier: "Qw2", timestampMicros: 102, value: "dmFsdWUtVkFJ", status: Commit},
 		},
 	}
-
-	mockFn := mockReadRowsFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowRequest{
@@ -85,7 +86,7 @@ func TestReadRow_NoRetry_CommitInSeparateChunk(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doReadRowOp(t, mockFn, &req, nil)
+	res := doReadRowOp(t, server, &req, nil)
 
 	// 4. Verify that the read succeeds
 	expectedRow := btpb.Row{
@@ -132,7 +133,7 @@ func TestReadRow_Generic_MultiStreams(t *testing.T) {
 	concurrency := len(rowKeys)
 	const requestRecorderCapacity = 10
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, requestRecorderCapacity)
 	actions := make([]*readRowsAction, concurrency)
 	for i := 0; i < concurrency; i++ {
@@ -142,7 +143,8 @@ func TestReadRow_Generic_MultiStreams(t *testing.T) {
 			delayStr:    "2s",
 		}
 	}
-	mockFn := mockReadRowsFnSimple(recorder, actions...)
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, actions...)
 
 	// 2. Build the requests to test proxy
 	reqs := make([]*testproxypb.ReadRowRequest, concurrency)
@@ -155,7 +157,7 @@ func TestReadRow_Generic_MultiStreams(t *testing.T) {
 	}
 
 	// 3. Perform the operations via test proxy
-	results := doReadRowOps(t, mockFn, reqs, nil)
+	results := doReadRowOps(t, server, reqs, nil)
 
 	// 4a. Check that all the requests succeeded
 	assert.Equal(t, concurrency, len(results))
@@ -170,3 +172,66 @@ func TestReadRow_Generic_MultiStreams(t *testing.T) {
 		assert.Equal(t, rowKeys[i], string(results[i].Row.Key))
 	}
 }
+
+// TestReadRow_Generic_CloseClient tests that client doesn't kill inflight requests after client
+// closing, but will reject new requests.
+func TestReadRow_Generic_CloseClient(t *testing.T) {
+	// 0. Common variable
+	rowKeys := []string{"op0-row", "op1-row", "op2-row", "op3-row", "op4-row", "op5-row"}
+	concurrency := len(rowKeys) / 2
+	clientID := t.Name()
+	const requestRecorderCapacity = 10
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *readRowsReqRecord, requestRecorderCapacity)
+	actions := make([]*readRowsAction, 2 * concurrency)
+	for i := 0; i < 2 * concurrency; i++ {
+		// Each request will get a different response.
+		actions[i] = &readRowsAction{
+			chunks:      []chunkData{dummyChunkData(rowKeys[i], fmt.Sprintf("value%d", i), Commit)},
+			delayStr:    "2s",
+		}
+	}
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, actions...)
+
+	// 2. Build the requests to test proxy
+	reqsBatchOne := make([]*testproxypb.ReadRowRequest, concurrency) // Will be finished
+	reqsBatchTwo := make([]*testproxypb.ReadRowRequest, concurrency) // Will be rejected by client
+	for i := 0; i < concurrency; i++ {
+		reqsBatchOne[i] = &testproxypb.ReadRowRequest{
+			ClientId:  clientID,
+			TableName: buildTableName("table"),
+			RowKey:    rowKeys[i],
+		}
+		reqsBatchTwo[i] = &testproxypb.ReadRowRequest{
+			ClientId:  clientID,
+			TableName: buildTableName("table"),
+			RowKey:    rowKeys[i + concurrency],
+		}
+	}
+
+	// 3. Perform the operations via test proxy
+	setUp(t, server, clientID, nil)
+	defer tearDown(t, server, clientID)
+
+	closeClientAfter := time.Second
+	resultsBatchOne := doReadRowOpsCore(t, clientID, reqsBatchOne, &closeClientAfter)
+	resultsBatchTwo := doReadRowOpsCore(t, clientID, reqsBatchTwo, nil)
+
+	// 4a. Check that server only receives batch-one requests
+	assert.Equal(t, concurrency, len(recorder))
+
+	// 4b. Check that all the batch-one requests succeeded
+	checkResultOkStatus(t, resultsBatchOne...)
+	for i := 0; i < concurrency; i++ {
+		assert.Equal(t, rowKeys[i], string(resultsBatchOne[i].Row.Key))
+	}
+
+	// 4c. Check that all the batch-two requests failed at the proxy level:
+	// the proxy tries to use close client. Client and server have nothing to blame.
+	for i := 0; i < concurrency; i++ {
+		assert.Empty(t, resultsBatchTwo[i])
+	}
+}
+

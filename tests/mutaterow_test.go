@@ -52,10 +52,11 @@ func dummyMutateRowRequest(tableID string, rowKey []byte, numMutations int) *btp
 
 // TestMutateRow_NoRetry_NonprintableByteKey tests that client can specify non-printable byte strings as row key.
 func TestMutateRow_NoRetry_NonprintableByteKey(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowReqRecord, 1)
 	action := &mutateRowAction{}
-	mockFn := mockMutateRowFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.MutateRowFn = mockMutateRowFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	// Set the nonprintable row key according to https://www.utf8-chartable.de/unicode-utf8-table.pl
@@ -69,7 +70,7 @@ func TestMutateRow_NoRetry_NonprintableByteKey(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doMutateRowOp(t, mockFn, &req, nil)
+	res := doMutateRowOp(t, server, &req, nil)
 
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
@@ -79,10 +80,11 @@ func TestMutateRow_NoRetry_NonprintableByteKey(t *testing.T) {
 
 // TestMutateRow_NoRetry_MultipleMutations tests that client can specify multiple mutations for a row.
 func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowReqRecord, 1)
 	action := &mutateRowAction{}
-	mockFn := mockMutateRowFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.MutateRowFn = mockMutateRowFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowRequest{
@@ -91,7 +93,7 @@ func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doMutateRowOp(t, mockFn, &req, nil)
+	res := doMutateRowOp(t, server, &req, nil)
 
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
@@ -106,14 +108,15 @@ func TestMutateRow_Generic_MultiStreams(t *testing.T) {
 	concurrency := len(rowKeys)
 	const requestRecorderCapacity = 10
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowReqRecord, requestRecorderCapacity)
 	actions := make([]*mutateRowAction, concurrency)
 	for i := 0; i < concurrency; i++ {
 		// Each request will succeed after delay.
 		actions[i] = &mutateRowAction{delayStr: "2s"}
 	}
-	mockFn := mockMutateRowFnSimple(recorder, actions...)
+	server := initMockServer(t)
+	server.MutateRowFn = mockMutateRowFnSimple(recorder, actions...)
 
 	// 2. Build the requests to test proxy
 	reqs := make([]*testproxypb.MutateRowRequest, concurrency)
@@ -126,7 +129,7 @@ func TestMutateRow_Generic_MultiStreams(t *testing.T) {
 	}
 
 	// 3. Perform the operations via test proxy
-	results := doMutateRowOps(t, mockFn, reqs, nil)
+	results := doMutateRowOps(t, server, reqs, nil)
 
 	// 4a. Check that all the requests succeeded
 	assert.Equal(t, concurrency, len(results))
@@ -136,3 +139,4 @@ func TestMutateRow_Generic_MultiStreams(t *testing.T) {
 	assert.Equal(t, concurrency, len(recorder))
 	checkRequestsAreWithin(t, 1000, recorder)
 }
+

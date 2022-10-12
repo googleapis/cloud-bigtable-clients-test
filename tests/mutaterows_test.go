@@ -93,10 +93,11 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 	const numRows int = 2
 	const tableID string = "table"
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	// Don't call mockMutateRowsFn() as the behavior is to record metadata of the request.
 	mdRecords := make(chan metadata.MD, 1)
-	mockFn := func(req *btpb.MutateRowsRequest, srv btpb.Bigtable_MutateRowsServer) error {
+	server := initMockServer(t)
+	server.MutateRowsFn = func(req *btpb.MutateRowsRequest, srv btpb.Bigtable_MutateRowsServer) error {
 		md, _ := metadata.FromIncomingContext(srv.Context())
 		mdRecords <- md
 
@@ -119,7 +120,7 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doMutateRowsOp(t, mockFn, &req, nil)
+	doMutateRowsOp(t, server, &req, nil)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -136,12 +137,13 @@ func TestMutateRows_NoRetry_NonTransientErrors(t *testing.T) {
 	mutatedRowIndices := []int{0, 3}
 	failedRowIndices := []int{1, 2}
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowsReqRecord, numRPCs + 1)
 	action := &mutateRowsAction{ // There are 4 rows to mutate, row-1 and row-2 have errors.
 		data: buildEntryData(mutatedRowIndices, failedRowIndices, codes.PermissionDenied),
 	}
-	mockFn := mockMutateRowsFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
@@ -150,7 +152,7 @@ func TestMutateRows_NoRetry_NonTransientErrors(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doMutateRowsOp(t, mockFn, &req, nil)
+	res := doMutateRowsOp(t, server, &req, nil)
 
 	// 4a. Check the number of requests in the recorder
 	assert.Equal(t, numRPCs, len(recorder))
@@ -172,13 +174,14 @@ func TestMutateRows_NoRetry_DeadlineExceeded(t *testing.T) {
 	const numRPCs int = 1
 	const tableID string = "table"
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowsReqRecord, numRPCs + 1)
 	action := &mutateRowsAction{ // There is one row to mutate, which has a long delay.
 		data: buildEntryData([]int{0}, nil, 0),
 		delayStr: "10s",
 	}
-	mockFn := mockMutateRowsFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
@@ -190,7 +193,7 @@ func TestMutateRows_NoRetry_DeadlineExceeded(t *testing.T) {
 	timeout := durationpb.Duration{
 		Seconds: 2,
 	}
-	res := doMutateRowsOp(t, mockFn, &req, &timeout)
+	res := doMutateRowsOp(t, server, &req, &timeout)
 	curTs := time.Now()
 
 	// 4a. Check the number of requests in the recorder
@@ -217,7 +220,7 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 	const tableID string = "table"
 	clientReq := dummyMutateRowsRequest(tableID, numRows)
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowsReqRecord, numRPCs + 1)
 	actions := []*mutateRowsAction{
 		&mutateRowsAction{ // There are 4 rows to mutate, row-1 and row-2 have errors.
@@ -232,7 +235,8 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 			data: buildEntryData([]int{0}, nil, 0),
 		},
 	}
-	mockFn := mockMutateRowsFn(recorder, actions)
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFn(recorder, actions)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
@@ -241,7 +245,7 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doMutateRowsOp(t, mockFn, &req, nil)
+	res := doMutateRowsOp(t, server, &req, nil)
 
 	// 4a. Check that the overall operation succeeded
 	checkResultOkStatus(t, res)
@@ -277,7 +281,7 @@ func TestMutateRows_RetryClientGap_ExponentialBackoff(t *testing.T) {
 	const numRPCs int = 4
 	const tableID string = "table"
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowsReqRecord, numRPCs + 1)
 	actions := []*mutateRowsAction{
 		&mutateRowsAction{ // There is one row to mutate, which has error.
@@ -296,7 +300,8 @@ func TestMutateRows_RetryClientGap_ExponentialBackoff(t *testing.T) {
 			data: buildEntryData([]int{0}, nil, 0),
 		},
 	}
-	mockFn := mockMutateRowsFn(recorder, actions)
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFn(recorder, actions)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowsRequest{
@@ -305,7 +310,7 @@ func TestMutateRows_RetryClientGap_ExponentialBackoff(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doMutateRowsOp(t, mockFn, &req, nil)
+	doMutateRowsOp(t, server, &req, nil)
 
 	// 4a. Check the number of requests in the recorder
 	assert.Equal(t, numRPCs, len(recorder))
@@ -343,7 +348,7 @@ func TestMutateRows_Generic_MultiStreams(t *testing.T) {
 	concurrency := len(rowKeys)
 	const requestRecorderCapacity = 10
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowsReqRecord, requestRecorderCapacity)
 	actions := make([]*mutateRowsAction, concurrency)
 	for i := 0; i < concurrency; i++ {
@@ -353,7 +358,8 @@ func TestMutateRows_Generic_MultiStreams(t *testing.T) {
 			delayStr:    "2s",
 		}
 	}
-	mockFn := mockMutateRowsFnSimple(recorder, actions...)
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFnSimple(recorder, actions...)
 
 	// 2. Build the requests to test proxy
 	reqs := make([]*testproxypb.MutateRowsRequest, concurrency)
@@ -366,7 +372,7 @@ func TestMutateRows_Generic_MultiStreams(t *testing.T) {
 	}
 
 	// 3. Perform the operations via test proxy
-	results := doMutateRowsOps(t, mockFn, reqs, nil)
+	results := doMutateRowsOps(t, server, reqs, nil)
 
 	// 4a. Check that all the requests succeeded
 	assert.Equal(t, concurrency, len(results))
@@ -376,3 +382,4 @@ func TestMutateRows_Generic_MultiStreams(t *testing.T) {
 	assert.Equal(t, concurrency, len(recorder))
 	checkRequestsAreWithin(t, 1000, recorder)
 }
+

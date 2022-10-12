@@ -41,10 +41,11 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	tableName := buildTableName("table")
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	// Don't call mockReadRowsFn() as the behavior is to record metadata of the request.
 	mdRecords := make(chan metadata.MD, 1)
-	mockFn := func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
+	server := initMockServer(t)
+	server.ReadRowsFn = func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
 		md, _ := metadata.FromIncomingContext(srv.Context())
 		mdRecords <- md
 		return nil
@@ -57,7 +58,7 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doReadRowsOp(t, mockFn, &req, nil)
+	doReadRowsOp(t, server, &req, nil)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -67,7 +68,7 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 
 // TestReadRows_NoRetry_OutOfOrderError tests that client will fail on receiving out of order row keys.
 func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	action := &readRowsAction{
 		chunks: []chunkData{
 			dummyChunkData("row-01", "v1", Commit),
@@ -76,7 +77,8 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 			dummyChunkData("row-03", "v3", Commit),
 		},
 	}
-	mockFn := mockReadRowsFnSimple(nil, action)
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(nil, action)
 
 	// 2. Build the request to test proxyk
 	req := testproxypb.ReadRowsRequest{
@@ -85,7 +87,7 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doReadRowsOp(t, mockFn, &req, nil)
+	res := doReadRowsOp(t, server, &req, nil)
 
 	// 4. Check the response (C++ and Java clients have different error messages)
 	assert.Contains(t, res.GetStatus().GetMessage(), "increasing")
@@ -95,7 +97,7 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 // TestReadRows_NoRetry_ErrorAfterLastRow tests that when receiving a transient error after receiving
 // the last row, the read will still finish successfully.
 func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	sequence := []*readRowsAction{
 		&readRowsAction{
 			chunks: []chunkData{
@@ -105,7 +107,8 @@ func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 			chunks: []chunkData{
 				dummyChunkData("row-05", "v5", Commit)}},
 	}
-	mockFn := mockReadRowsFn(nil, sequence)
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFn(nil, sequence)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
@@ -117,7 +120,7 @@ func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doReadRowsOp(t, mockFn, &req, nil)
+	res := doReadRowsOp(t, server, &req, nil)
 
 	// 4. Verify that the read succeeds
 	checkResultOkStatus(t, res)
@@ -128,7 +131,7 @@ func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 // TestReadRows_Retry_PausedScan tests that client will transparently resume the scan when a stream
 // is paused.
 func TestReadRows_Retry_PausedScan(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 2)
 	sequence  := []*readRowsAction{
 		&readRowsAction{
@@ -139,7 +142,8 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 			chunks: []chunkData{
 				dummyChunkData("row-05", "v5", Commit)}},
 	}
-	mockFn := mockReadRowsFn(recorder, sequence)
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
@@ -148,7 +152,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doReadRowsOp(t, mockFn, &req, nil)
+	res := doReadRowsOp(t, server, &req, nil)
 
 	// 4a. Verify that two rows were read successfully
 	checkResultOkStatus(t, res)
@@ -165,7 +169,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 
 // TestReadRows_Retry_LastScannedRow tests that client will resume from last scan row key.
 func TestReadRows_Retry_LastScannedRow(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 2)
 	sequence := []*readRowsAction{
 		&readRowsAction{
@@ -179,7 +183,8 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 			chunks: []chunkData{
 				dummyChunkData("zbar", "v_z", Commit)}},
 	}
-	mockFn := mockReadRowsFn(recorder, sequence)
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
@@ -188,7 +193,7 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doReadRowsOp(t, mockFn, &req, nil)
+	res := doReadRowsOp(t, server, &req, nil)
 
 	// 4a. Verify that rows aabar and zzbar were read successfully (qqfoo doesn't match the filter)
 	checkResultOkStatus(t, res)
@@ -216,7 +221,7 @@ func TestReadRows_Generic_MultiStreams(t *testing.T) {
 	concurrency := len(rowKeys)
 	const requestRecorderCapacity = 10
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, requestRecorderCapacity)
 	actions := make([]*readRowsAction, concurrency)
 	for i := 0; i < concurrency; i++ {
@@ -229,7 +234,8 @@ func TestReadRows_Generic_MultiStreams(t *testing.T) {
 			delayStr:    "2s",
 		}
 	}
-	mockFn := mockReadRowsFnSimple(recorder, actions...)
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, actions...)
 
 	// 2. Build the requests to test proxy
 	reqs := make([]*testproxypb.ReadRowsRequest, concurrency)
@@ -246,7 +252,7 @@ func TestReadRows_Generic_MultiStreams(t *testing.T) {
 	}
 
 	// 3. Perform the operations via test proxy
-	results := doReadRowsOps(t, mockFn, reqs, nil)
+	results := doReadRowsOps(t, server, reqs, nil)
 
 	// 4a. Check that all the requests succeeded
 	assert.Equal(t, concurrency, len(results))
@@ -269,7 +275,7 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 	const maxConnAge = 4 * time.Second
 	const maxConnAgeGrace = time.Second
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 3)
 	sequence := []*readRowsAction{
 		&readRowsAction{
@@ -286,7 +292,13 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 			chunks: []chunkData{
 				dummyChunkData("zbar", "v_z", Commit)}},
 	}
-	mockFn := mockReadRowsFn(recorder, sequence)
+	serverOpt := grpc.KeepaliveParams(
+		keepalive.ServerParameters{
+			MaxConnectionAge:      maxConnAge,
+			MaxConnectionAgeGrace: maxConnAgeGrace,
+		})
+	server := initMockServer(t, serverOpt)
+	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
@@ -295,12 +307,7 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	serverOpt := grpc.KeepaliveParams(
-		keepalive.ServerParameters{
-			MaxConnectionAge:      maxConnAge,
-			MaxConnectionAgeGrace: maxConnAgeGrace,
-		})
-	res := doReadRowsOp(t, mockFn, &req, nil, serverOpt)
+	res := doReadRowsOp(t, server, &req, nil)
 
 	// 4a. Verify that rows were read successfully
 	checkResultOkStatus(t, res)

@@ -259,6 +259,14 @@ type readModifyWriteRowReqRecord struct {
 }
 func (r *readModifyWriteRowReqRecord) GetTs() time.Time {return r.ts}
 
+// anyRequest is an interface type that works for the request types of test proxy.
+type anyRequest interface {
+	*testproxypb.ReadRowRequest | *testproxypb.ReadRowsRequest | *testproxypb.MutateRowRequest |
+	*testproxypb.MutateRowsRequest | *testproxypb.SampleRowKeysRequest |
+	*testproxypb.CheckAndMutateRowRequest | *testproxypb.ReadModifyWriteRowRequest
+	GetClientId() string
+}
+
 // anyResult is an interface type that works for the result types of test proxy.
 type anyResult interface {
 	*testproxypb.RowResult | *testproxypb.RowsResult | *testproxypb.MutateRowResult |

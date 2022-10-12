@@ -55,10 +55,11 @@ func TestCheckAndMutateRow_NoRetry_TrueMutations(t *testing.T) {
 	const predicateMatched bool = true
 	rowKey := []byte("row-01")
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *checkAndMutateRowReqRecord, 1)
 	action := &checkAndMutateRowAction{predicateMatched: predicateMatched}
-	mockFn := mockCheckAndMutateRowFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.CheckAndMutateRowFn = mockCheckAndMutateRowFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
@@ -67,7 +68,7 @@ func TestCheckAndMutateRow_NoRetry_TrueMutations(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doCheckAndMutateRowOp(t, mockFn, &req, nil)
+	res := doCheckAndMutateRowOp(t, server, &req, nil)
 
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
@@ -83,10 +84,11 @@ func TestCheckAndMutateRow_NoRetry_FalseMutations(t *testing.T) {
 	const predicateMatched bool = false
 	rowKey := []byte("row-01")
 
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	recorder := make(chan *checkAndMutateRowReqRecord, 1)
 	action := &checkAndMutateRowAction{predicateMatched: predicateMatched}
-	mockFn := mockCheckAndMutateRowFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.CheckAndMutateRowFn = mockCheckAndMutateRowFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
@@ -95,7 +97,7 @@ func TestCheckAndMutateRow_NoRetry_FalseMutations(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doCheckAndMutateRowOp(t, mockFn, &req, nil)
+	res := doCheckAndMutateRowOp(t, server, &req, nil)
 
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
@@ -113,7 +115,7 @@ func TestCheckAndMutateRow_Generic_MultiStreams(t *testing.T) {
 	concurrency := len(rowKeys)
 	const requestRecorderCapacity = 10
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	recorder := make(chan *checkAndMutateRowReqRecord, requestRecorderCapacity)
 	actions := make([]*checkAndMutateRowAction, concurrency)
 	for i := 0; i < concurrency; i++ {
@@ -122,7 +124,8 @@ func TestCheckAndMutateRow_Generic_MultiStreams(t *testing.T) {
 			delayStr: "2s",
 		}
 	}
-	mockFn := mockCheckAndMutateRowFnSimple(recorder, actions...)
+	server := initMockServer(t)
+	server.CheckAndMutateRowFn = mockCheckAndMutateRowFnSimple(recorder, actions...)
 
 	// 2. Build the requests to test proxy
 	reqs := make([]*testproxypb.CheckAndMutateRowRequest, concurrency)
@@ -135,7 +138,7 @@ func TestCheckAndMutateRow_Generic_MultiStreams(t *testing.T) {
 	}
 
 	// 3. Perform the operations via test proxy
-	results := doCheckAndMutateRowOps(t, mockFn, reqs, nil)
+	results := doCheckAndMutateRowOps(t, server, reqs, nil)
 
 	// 4a. Check that all the requests succeeded
 	assert.Equal(t, concurrency, len(results))
@@ -157,13 +160,14 @@ func TestCheckAndMutateRow_NoRetry_TransientError(t *testing.T) {
 	const predicateMatched bool = false
 	rowKey := []byte("row-01")
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	records := make(chan *checkAndMutateRowReqRecord, 2)
 	actions := []*checkAndMutateRowAction{
 		&checkAndMutateRowAction{rpcError: codes.Unavailable},
 		&checkAndMutateRowAction{predicateMatched: predicateMatched},
 	}
-	mockFn := mockCheckAndMutateRowFn(records, actions)
+	server := initMockServer(t)
+	server.CheckAndMutateRowFn = mockCheckAndMutateRowFn(records, actions)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
@@ -172,7 +176,7 @@ func TestCheckAndMutateRow_NoRetry_TransientError(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doCheckAndMutateRowOp(t, mockFn, &req, nil)
+	res := doCheckAndMutateRowOp(t, server, &req, nil)
 
 	// 4. Check that the result has error, and there is no retry
 	assert.NotEmpty(t, res)

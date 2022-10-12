@@ -24,12 +24,13 @@ import (
 
 // TestSampleRowKeys_NoRetry_NoEmptyKey tests that client should accept a list with no empty key.
 func TestSampleRowKeys_NoRetry_NoEmptyKey(t *testing.T) {
-	// 1. Instantiate the mock function
+	// 1. Instantiate the mock server
 	sequence := []sampleRowKeysAction{
 		sampleRowKeysAction{rowKey: []byte("row-31"), offsetBytes: 30},
 		sampleRowKeysAction{rowKey: []byte("row-98"), offsetBytes: 65},
 	}
-	mockFn := mockSampleRowKeysFn(nil, sequence)
+	server := initMockServer(t)
+	server.SampleRowKeysFn = mockSampleRowKeysFn(nil, sequence)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.SampleRowKeysRequest{
@@ -38,7 +39,7 @@ func TestSampleRowKeys_NoRetry_NoEmptyKey(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doSampleRowKeysOp(t, mockFn, &req, nil)
+	res := doSampleRowKeysOp(t, server, &req, nil)
 
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
@@ -53,7 +54,7 @@ func TestSampleRowKeys_Generic_MultiStreams(t *testing.T) {
 	const concurrency = 5
 	const requestRecorderCapacity = 10
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	recorder := make(chan *sampleRowKeysReqRecord, requestRecorderCapacity)
 	actions := make([]sampleRowKeysAction, concurrency)
 	for i := 0; i < concurrency; i++ {
@@ -61,7 +62,8 @@ func TestSampleRowKeys_Generic_MultiStreams(t *testing.T) {
 		actions[i] = sampleRowKeysAction{
 			rowKey: []byte("row-31"), offsetBytes: 30, endOfStream: true, delayStr: "2s"}
 	}
-	mockFn := mockSampleRowKeysFn(recorder, actions)
+	server := initMockServer(t)
+	server.SampleRowKeysFn = mockSampleRowKeysFn(recorder, actions)
 
 	// 2. Build the requests to test proxy
 	reqs := make([]*testproxypb.SampleRowKeysRequest, concurrency)
@@ -74,7 +76,7 @@ func TestSampleRowKeys_Generic_MultiStreams(t *testing.T) {
 	}
 
 	// 3. Perform the operations via test proxy
-	results := doSampleRowKeysOps(t, mockFn, reqs, nil)
+	results := doSampleRowKeysOps(t, server, reqs, nil)
 
 	// 4a. Check that all the requests succeeded
 	assert.Equal(t, concurrency, len(results))
@@ -84,3 +86,4 @@ func TestSampleRowKeys_Generic_MultiStreams(t *testing.T) {
 	assert.Equal(t, concurrency, len(recorder))
 	checkRequestsAreWithin(t, 1000, recorder)
 }
+

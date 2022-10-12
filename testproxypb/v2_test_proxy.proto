@@ -111,11 +111,14 @@ message CreateClientRequest {
 
 message CreateClientResponse {}
 
+message CloseClientRequest {
+  string client_id = 1;
+}
+
+message CloseClientResponse {}
+
 message RemoveClientRequest {
   string client_id = 1;
-  // Whether to cancel all pending operations, instead of waiting for them
-  // to complete.
-  bool cancel_all = 2;
 }
 
 message RemoveClientResponse {}
@@ -217,7 +220,10 @@ service CloudBigtableV2TestProxy {
   // Each client has its own dedicated channel(s), and can be used concurrently
   // and independently with other clients.
   rpc CreateClient(CreateClientRequest) returns (CreateClientResponse);
-  // Removes a client in the proxy.
+  // Closes a client in the proxy, making it not accept new requests.
+  rpc CloseClient(CloseClientRequest) returns (CloseClientResponse);
+  // Removes a client in the proxy, making it inaccessible. Client closing
+  // should be done by CloseClient() separately.
   rpc RemoveClient(RemoveClientRequest) returns (RemoveClientResponse);
 
   // Bigtable operations: for each operation, you should use the synchronous or

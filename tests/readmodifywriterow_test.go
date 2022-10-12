@@ -111,10 +111,11 @@ func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 	rowKey := []byte("row-01")
 	clientReq := dummyReadModifyWriteRowRequest("table", rowKey, increments, appends)
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readModifyWriteRowReqRecord, 1)
 	action := &readModifyWriteRowAction{row: dummyResultRow(rowKey, increments, appends)}
-	mockFn := mockReadModifyWriteRowFnSimple(recorder, action)
+	server := initMockServer(t)
+	server.ReadModifyWriteRowFn = mockReadModifyWriteRowFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadModifyWriteRowRequest{
@@ -123,7 +124,7 @@ func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doReadModifyWriteRowOp(t, mockFn, &req, nil)
+	res := doReadModifyWriteRowOp(t, server, &req, nil)
 
 	// 4. Check that the dummy request is sent and the dummy row is returned
 	checkResultOkStatus(t, res)
@@ -145,7 +146,7 @@ func TestReadModifyWriteRow_Generic_MultiStreams(t *testing.T) {
 	concurrency := len(rowKeys)
 	const requestRecorderCapacity = 10
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	recorder := make(chan *readModifyWriteRowReqRecord, requestRecorderCapacity)
 	actions := make([]*readModifyWriteRowAction, concurrency)
 	for i := 0; i < concurrency; i++ {
@@ -153,7 +154,8 @@ func TestReadModifyWriteRow_Generic_MultiStreams(t *testing.T) {
 			row: dummyResultRow([]byte(rowKeys[i]), increments, appends),
 			delayStr: "2s"}
 	}
-	mockFn := mockReadModifyWriteRowFnSimple(recorder, actions...)
+	server := initMockServer(t)
+	server.ReadModifyWriteRowFn = mockReadModifyWriteRowFnSimple(recorder, actions...)
 
 	// 2. Build the requests to test proxy
 	reqs := make([]*testproxypb.ReadModifyWriteRowRequest, concurrency)
@@ -166,7 +168,7 @@ func TestReadModifyWriteRow_Generic_MultiStreams(t *testing.T) {
 	}
 
 	// 3. Perform the operations via test proxy
-	results := doReadModifyWriteRowOps(t, mockFn, reqs, nil)
+	results := doReadModifyWriteRowOps(t, server, reqs, nil)
 
 	// 4a. Check that all the requests succeeded
 	assert.Equal(t, concurrency, len(results))
@@ -190,13 +192,14 @@ func TestReadModifyWriteRow_NoRetry_TransientError(t *testing.T) {
 	rowKey := []byte("row-01")
 	clientReq := dummyReadModifyWriteRowRequest("table", rowKey, increments, appends)
 
-	// 1. Instantiate the mockserver function
+	// 1. Instantiate the mock server
 	records := make(chan *readModifyWriteRowReqRecord, 2)
 	actions := []*readModifyWriteRowAction{
 		&readModifyWriteRowAction{rpcError: codes.Unavailable},
 		&readModifyWriteRowAction{row: dummyResultRow(rowKey, increments, appends)},
 	}
-	mockFn := mockReadModifyWriteRowFn(records, actions)
+	server := initMockServer(t)
+	server.ReadModifyWriteRowFn = mockReadModifyWriteRowFn(records, actions)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadModifyWriteRowRequest{
@@ -205,7 +208,7 @@ func TestReadModifyWriteRow_NoRetry_TransientError(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doReadModifyWriteRowOp(t, mockFn, &req, nil)
+	res := doReadModifyWriteRowOp(t, server, &req, nil)
 
 	// 4. Check that the result has error, and there is no retry
 	assert.NotEmpty(t, res)
