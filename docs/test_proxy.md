@@ -17,22 +17,25 @@ see the Java proxy (coming soon) and the
 Second, you need to implement each individual method in the proxy
 ([Proto definition](https://github.com/googleapis/cloud-bigtable-clients-test/blob/main/testproxypb/v2_test_proxy.proto)):
 
-* `CreateClient()`, `RemoveClient()` -> Please check [additional notes](#additional-notes)
-* `ReadRow()`, `ReadRows()`
-* `MutateRow()`, `BulkMutateRows()`
-* `CheckAndMutateRow()`
-* `SampleRowKeys()`
-* `ReadModifyWriteRow()`
+*   `CreateClient()`, `CloseClient()`, `RemoveClient()` -> Please check
+    [additional notes](#notes)
+*   `ReadRow()`, `ReadRows()`
+*   `MutateRow()`, `BulkMutateRows()`
+*   `CheckAndMutateRow()`
+*   `SampleRowKeys()`
+*   `ReadModifyWriteRow()`
 
 You can use either sync or async mode of the client library. Note that some clients may only support one mode.
 If your client supports both modes, you can build two separate test proxy binaries, and test both modes.
 
-Third, you should also implement the **`main`** function to bring up the proxy server and add a command line parameter
-to allow specifying a valid port number at runtime.
+Third, you should also implement a **`main`** function to bring up the proxy
+server and add a command line parameter to allow specifying a valid port number
+at runtime.
 
-Last, you should place your test proxy in a \"*test.\*proxy*\" directory of the GitHub repo of your client library.
+Last, you should place your test proxy in a directory of the GitHub repo of your
+client library. The suggested name pattern is \"*test.\*proxy*\".
 
-## Additional Notes
+## Additional Notes{#notes}
 
 A difficult part of the proxy implementation lies in `CreateClient()`:
 
@@ -44,3 +47,14 @@ A difficult part of the proxy implementation lies in `CreateClient()`:
     properly, including channel credential, call credential, client timeout,
     etc. It's important to understand how your language handles channel vs. call
     credentials.
+
+There may be confusion about `CloseClient()` and `RemoveClient()`, the key ideas
+are:
+
+1.  `RemoveClient()` removes the client object from the map/hash/dict, so proxy
+    user can no longer see the object.
+1.  `CloseClient()` makes the client not accept new requests. For inflight
+    requests, the desirable result is that they are not cancelled (Different
+    client libraries may have discrepancy here).
+1.  `RemoveClient()` is expected to be called after `CloseClient()` to avoid
+    resource leak.
