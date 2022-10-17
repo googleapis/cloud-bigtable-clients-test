@@ -343,5 +343,5 @@ func TestReadRows_Generic_EmptyTableNoRows(t *testing.T) {
 
 	// 3. Perform the operation via test proxy
 	res := doReadRowsOp(t, server, &req, nil)
-	assert.Len(t, res.Row, 1)
+	assert.Len(t, res.Row, 0)
 }
