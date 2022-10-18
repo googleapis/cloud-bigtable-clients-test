@@ -113,7 +113,7 @@ func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
 		ClientId: t.Name(),
-		Request:  &btpb.ReadRowsRequest{
+		Request: &btpb.ReadRowsRequest{
 			TableName: buildTableName("table"),
 			RowsLimit: 1,
 		},
@@ -133,7 +133,7 @@ func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 func TestReadRows_Retry_PausedScan(t *testing.T) {
 	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 2)
-	sequence  := []*readRowsAction{
+	sequence := []*readRowsAction{
 		&readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("row-01", "v1", Commit)}},
@@ -231,7 +231,7 @@ func TestReadRows_Generic_MultiStreams(t *testing.T) {
 				dummyChunkData(rowKeys[i][0], fmt.Sprintf("value%d-a", i), Commit),
 				dummyChunkData(rowKeys[i][1], fmt.Sprintf("value%d-b", i), Commit),
 			},
-			delayStr:    "2s",
+			delayStr: "2s",
 		}
 	}
 	server := initMockServer(t)
@@ -242,7 +242,7 @@ func TestReadRows_Generic_MultiStreams(t *testing.T) {
 	for i := 0; i < concurrency; i++ {
 		reqs[i] = &testproxypb.ReadRowsRequest{
 			ClientId: t.Name(),
-			Request:  &btpb.ReadRowsRequest{
+			Request: &btpb.ReadRowsRequest{
 				TableName: buildTableName("table"),
 				Rows: &btpb.RowSet{
 					RowKeys: [][]byte{[]byte(rowKeys[i][0]), []byte(rowKeys[i][1])},
@@ -324,3 +324,22 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("abar")}))
 }
 
+// TestReadRows_NoRetry_EmptyTableNoRows tests that reads on an empty table returns 0 rows.
+func TestReadRows_NoRetry_EmptyTableNoRows(t *testing.T) {
+	// 1. Instantiate the mock server
+	recorder := make(chan *readRowsReqRecord, 3)
+	action := &readRowsAction{
+		chunks: []chunkData{}}
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, action)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, server, &req, nil)
+	assert.Len(t, res.Row, 0)
+}
