@@ -324,7 +324,7 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("abar")}))
 }
 
-// TestReadRows_Generic_EmptyTableNoRows tests that reads on an empty table returns 0 rows.
+// TestReadRows_NoRetry_EmptyTableNoRows tests that reads on an empty table returns 0 rows.
 func TestReadRows_NoRetry_EmptyTableNoRows(t *testing.T) {
 	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 3)
