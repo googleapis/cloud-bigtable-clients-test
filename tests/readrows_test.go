@@ -325,15 +325,13 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 }
 
 // TestReadRows_Generic_EmptyTableNoRows tests that reads on an empty table returns 0 rows.
-func TestReadRows_Generic_EmptyTableNoRows(t *testing.T) {
+func TestReadRows_NoRetry_EmptyTableNoRows(t *testing.T) {
 	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 3)
-	sequence := []*readRowsAction{
-		&readRowsAction{
-			chunks: []chunkData{}},
-	}
+	action := &readRowsAction{
+		chunks: []chunkData{}}
 	server := initMockServer(t)
-	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, action)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
