@@ -324,7 +324,8 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("abar")}))
 }
 
-// TestReadRows_NoRetry_MultipleIndividualRowKeys tests that the client can get multiple rows from keys
+// TestReadRows_NoRetry_MultipleIndividualRowKeys tests that the client can request multiple
+// individual row keys to scan
 func TestReadRows_NoRetry_MultipleIndividualRowKeys(t *testing.T) {
 	k1 := "abar"
 	k2 := "qbar"
