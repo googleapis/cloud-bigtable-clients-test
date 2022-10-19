@@ -387,3 +387,63 @@ func TestReadRows_NoRetry_EmptyTableNoRows(t *testing.T) {
 	res := doReadRowsOp(t, server, &req, nil)
 	assert.Len(t, res.Row, 0)
 }
+
+// TestReadRows_NoRetry_MultipleRowRanges tests that the client can request multiple
+// row ranges to scan
+func TestReadRows_NoRetry_MultipleRowRanges(t *testing.T) {
+	k1 := "abar"
+	k2 := "kbar"
+	k3 := "qbar"
+	k4 := "zbar"
+
+	// 1. Instantiate the mock server
+	rec := make(chan *readRowsReqRecord, 3)
+	seq := []*readRowsAction{
+		{
+			chunks: []chunkData{dummyChunkData(k1, "v_a", Commit)},
+		},
+		{
+			chunks: []chunkData{dummyChunkData(k2, "v_k", Commit)},
+		},
+		{
+			chunks: []chunkData{dummyChunkData(k3, "v_q", Commit)},
+		},
+		{
+			chunks: []chunkData{dummyChunkData(k4, "v_z", Commit)},
+		},
+	}
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFn(rec, seq)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ReadRowsRequest{
+			TableName: buildTableName("table"),
+			Rows: &btpb.RowSet{
+				RowRanges: []*btpb.RowRange{
+					{
+						StartKey: &btpb.RowRange_StartKeyClosed{
+							StartKeyClosed: []byte(k1),
+						},
+						EndKey: &btpb.RowRange_EndKeyClosed{
+							EndKeyClosed: []byte(k2),
+						},
+					},
+					{
+						StartKey: &btpb.RowRange_StartKeyClosed{
+							StartKeyClosed: []byte(k3),
+						},
+						EndKey: &btpb.RowRange_EndKeyClosed{
+							EndKeyClosed: []byte(k4),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, server, &req, nil)
+	assert.Len(t, res.Row, 4)
+}
