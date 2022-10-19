@@ -324,6 +324,50 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("abar")}))
 }
 
+// TestReadRows_NoRetry_MultipleIndividualRowKeys tests that the client can request multiple
+// individual row keys to scan
+func TestReadRows_NoRetry_MultipleIndividualRowKeys(t *testing.T) {
+	k1 := "abar"
+	k2 := "qbar"
+	k3 := "zbar"
+
+	// 1. Instantiate the mock server
+	rec := make(chan *readRowsReqRecord, 3)
+	seq := []*readRowsAction{
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData(k1, "v_a", Commit)}},
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData(k2, "v_q", Commit)}},
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData(k3, "v_z", Commit)}},
+	}
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFn(rec, seq)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ReadRowsRequest{
+			TableName: buildTableName("table"),
+			Rows: &btpb.RowSet{
+				RowKeys: [][]byte{
+					[]byte(k1),
+					[]byte(k2),
+					[]byte(k3),
+				},
+			},
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, server, &req, nil)
+	assert.Len(t, res.Row, 3)
+
+}
+
 // TestReadRows_NoRetry_EmptyTableNoRows tests that reads on an empty table returns 0 rows.
 func TestReadRows_NoRetry_EmptyTableNoRows(t *testing.T) {
 	// 1. Instantiate the mock server
