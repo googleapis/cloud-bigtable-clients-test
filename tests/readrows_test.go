@@ -455,13 +455,14 @@ func TestReadRows_NoRetry_ClosedStartUnspecifiedEnd(t *testing.T) {
 	cfs := []string{"v_a", "v_k"}
 
 	rec := make(chan *readRowsReqRecord, 3)
-	var seq []*readRowsAction
-	seq = append(seq, &readRowsAction{
-		chunks: []chunkData{dummyChunkData(keys[0], cfs[0], Commit)},
-	})
-	seq = append(seq, &readRowsAction{
-		chunks: []chunkData{dummyChunkData(keys[1], cfs[1], Commit)},
-	})
+	seq := []*readRowsAction{
+		{
+			chunks: []chunkData{dummyChunkData(keys[0], cfs[0], Commit)},
+		},
+		{
+			chunks: []chunkData{dummyChunkData(keys[1], cfs[1], Commit)},
+		},
+	}
 
 	// 1. Instantiate the mock server
 	server := initMockServer(t)
