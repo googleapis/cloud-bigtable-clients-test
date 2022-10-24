@@ -451,28 +451,17 @@ func TestReadRows_NoRetry_MultipleRowRanges(t *testing.T) {
 // TestReadRows_NoRetry_ClosedStartUnspecifiedEnd tests that the client can request
 // a row range with a closed start key and no end key.
 func TestReadRows_NoRetry_ClosedStartUnspecifiedEnd(t *testing.T) {
-	type testRow struct {
-		key, cf string
-	}
-
-	trs := []testRow{
-		{
-			key: "abar",
-			cf:  "v_a",
-		},
-		{
-			key: "kbar",
-			cf:  "v_k",
-		},
-	}
+	keys := []string{"abar", "kbar"}
+	cfs := []string{"v_a", "v_k"}
 
 	rec := make(chan *readRowsReqRecord, 3)
 	var seq []*readRowsAction
-	for _, tr := range trs {
-		seq = append(seq, &readRowsAction{
-			chunks: []chunkData{dummyChunkData(tr.key, tr.cf, Commit)},
-		})
-	}
+	seq = append(seq, &readRowsAction{
+		chunks: []chunkData{dummyChunkData(keys[0], cfs[0], Commit)},
+	})
+	seq = append(seq, &readRowsAction{
+		chunks: []chunkData{dummyChunkData(keys[1], cfs[1], Commit)},
+	})
 
 	// 1. Instantiate the mock server
 	server := initMockServer(t)
@@ -487,7 +476,7 @@ func TestReadRows_NoRetry_ClosedStartUnspecifiedEnd(t *testing.T) {
 				RowRanges: []*btpb.RowRange{
 					{
 						StartKey: &btpb.RowRange_StartKeyClosed{
-							StartKeyClosed: []byte(trs[0].key),
+							StartKeyClosed: []byte(keys[0]),
 						},
 					},
 				},
