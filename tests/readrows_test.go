@@ -489,3 +489,39 @@ func TestReadRows_NoRetry_ClosedStartUnspecifiedEnd(t *testing.T) {
 	res := doReadRowsOp(t, server, &req, nil)
 	assert.Len(t, res.Row, 2)
 }
+
+// TestReadRows_NoRetry_OpenEndUnspecifiedStart tests that the client can request
+// a row range with an open end key and no start key.
+func TestReadRows_NoRetry_OpenEndUnspecifiedStart(t *testing.T) {
+	keys := []string{"abar", "kbar"}
+	values := []string{"v_a", "v_k"}
+
+	rec := make(chan *readRowsReqRecord, 3)
+
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(rec, &readRowsAction{
+		chunks: []chunkData{dummyChunkData(keys[0], values[0], Commit)},
+	})
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ReadRowsRequest{
+			TableName: buildTableName("table"),
+			Rows: &btpb.RowSet{
+				RowRanges: []*btpb.RowRange{
+					{
+						EndKey: &btpb.RowRange_EndKeyOpen{
+							EndKeyOpen: []byte(keys[1]),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, server, &req, nil)
+	assert.Len(t, res.Row, 1)
+}
