@@ -30,7 +30,8 @@ If your client supports both modes, you can build two separate test proxy binari
 
 Third, you should also implement a **`main`** function to bring up the proxy
 server and add a command line parameter to allow specifying a valid port number
-at runtime.
+at runtime. Additional command line parameters may be needed for custom settings
+of client authentication. Please check [additional notes](#notes) for details.
 
 Last, you should place your test proxy in a directory of the GitHub repo of your
 client library. The suggested name pattern is \"*test.\*proxy*\".
@@ -39,22 +40,31 @@ client library. The suggested name pattern is \"*test.\*proxy*\".
 
 A difficult part of the proxy implementation lies in `CreateClient()`:
 
-1.  The test proxy must store multiple Cloud Bigtable client objects in a data
+*   The test proxy must store multiple Cloud Bigtable client objects in a data
     structure like map/hash/dict where the key is a unique ID that tags the
     client object. To facilitate concurrent access to the data structure,
     locking is needed.
-1.  When creating a client object, some configurations need to be set up
+*   When creating a client object, some configurations need to be set up
     properly, including channel credential, call credential, client timeout,
-    etc. It's important to understand how your language handles channel vs. call
-    credentials.
+    etc. It's important to understand how your language handles channel
+    encryption and call credential in different scenarios (the first scenario
+    below is required):
+    *   [Required] For hermetic testing (which applies to this repo's tests),
+        you don't need to set call credential, and you can use a **plaintext**
+        connection to the mock server.
+    *   [Optional] For non-hermetic testing (the server is real and remote), you
+        need an **encrypted** channel, and you can optionally provide a custom
+        call **credential** (e.g. from service account).
+        *   To be more sophisticaed, you can allow the specification of custom
+            **root certs** and **ssl target** if the default doesn't work for
+            you.
 
 There may be confusion about `CloseClient()` and `RemoveClient()`, the key ideas
 are:
 
-1.  `RemoveClient()` removes the client object from the map/hash/dict, so proxy
-    user can no longer see the object.
-1.  `CloseClient()` makes the client not accept new requests. For inflight
+*   `CloseClient()` makes the client not accept new requests. For inflight
     requests, the desirable result is that they are not cancelled (Different
     client libraries may have discrepancy here).
-1.  `RemoveClient()` is expected to be called after `CloseClient()` to avoid
-    resource leak.
+*   `RemoveClient()` removes the client object from the map/hash/dict, so proxy
+    user can no longer see the object. `RemoveClient()` is expected to be called
+    after `CloseClient()` to avoid resource leak.
