@@ -19,7 +19,6 @@ package bigtable.client.test;
 import "google/bigtable/v2/bigtable.proto";
 import "google/bigtable/v2/data.proto";
 import "google/protobuf/duration.proto";
-import "google/protobuf/empty.proto";
 import "google/rpc/status.proto";
 
 option java_multiple_files = true;
@@ -55,32 +54,6 @@ option go_package = "./testproxypb";
 // The final decision regarding semantics must be documented for the
 // CloudBigtableV2TestProxy service in this file.
 
-// Holds the root certificates for SSL.
-message SslCredentials {
-  // The buffer containing the PEM encoding of the server root certificates.
-  string pem_root_certs = 1;
-}
-
-// Options for channel credentials.
-message ChannelCredential {
-  // If unspecified, the default application credentials are used.
-  oneof value {
-    // Don't use any credentials.
-    google.protobuf.Empty none = 1;
-    // Use the provided root certificates for connecting via SSL.
-    SslCredentials ssl = 2;
-  }
-}
-
-// Options for call credentials.
-message CallCredential {
-  // If unspecified, no call credentials are used.
-  oneof value {
-    // JSON string for a service account credential.
-    string json_service_account = 1;
-  }
-}
-
 message CreateClientRequest {
   string client_id = 1;
   // The "host:port" address of the data API endpoint (i.e. the backend being
@@ -94,19 +67,10 @@ message CreateClientRequest {
   // Some client bindings allow specifying the app profile on a per-operation
   // basis. We don't yet support this in the proxy API, but may in the future.
   string app_profile_id = 5;
-  // Optional channel credential for the client. If not provided, the
-  // application default credentials will be used.
-  ChannelCredential channel_credential = 6;
-  // Optional call credential for the client. Combined with the
-  // channel_credential. If not provided, only the channel_credential will be
-  // used for the client.
-  CallCredential call_credential = 7;
-  // If provided, override the SSL target name with this target.
-  string override_ssl_target_name = 8;
   // If provided, a custom timeout will be set for each API call conducted by
   // the created client. Otherwise, the default timeout from the client library
   // will be used. Note that the override applies to all the methods.
-  google.protobuf.Duration per_operation_timeout = 9;
+  google.protobuf.Duration per_operation_timeout = 6;
 }
 
 message CreateClientResponse {}

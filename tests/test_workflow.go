@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -50,11 +49,6 @@ func createCbtClient(t *testing.T, clientID string, serverAddr string, timeout *
 		DataTarget: serverAddr,
 		ProjectId:  projectID,
 		InstanceId: instanceID,
-		ChannelCredential: &testproxypb.ChannelCredential{
-			Value: &testproxypb.ChannelCredential_None{
-				None: &empty.Empty{},
-			},
-		},
 		PerOperationTimeout: timeout,
 	}
 	_, err := testProxyClient.CreateClient(context.Background(), &req)
