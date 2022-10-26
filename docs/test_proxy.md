@@ -18,7 +18,7 @@ Second, you need to implement each individual method in the proxy
 ([Proto definition](https://github.com/googleapis/cloud-bigtable-clients-test/blob/main/testproxypb/v2_test_proxy.proto)):
 
 *   `CreateClient()`, `CloseClient()`, `RemoveClient()` -> Please check
-    [additional notes](#notes)
+    [additional notes](#additional-notes)
 *   `ReadRow()`, `ReadRows()`
 *   `MutateRow()`, `BulkMutateRows()`
 *   `CheckAndMutateRow()`
@@ -31,12 +31,13 @@ If your client supports both modes, you can build two separate test proxy binari
 Third, you should also implement a **`main`** function to bring up the proxy
 server and add a command line parameter to allow specifying a valid port number
 at runtime. Additional command line parameters may be needed for custom settings
-of client authentication. Please check [additional notes](#notes) for details.
+of client authentication. Please check [additional notes](#additional-notes) for
+details.
 
 Last, you should place your test proxy in a directory of the GitHub repo of your
 client library. The suggested name pattern is \"*test.\*proxy*\".
 
-## Additional Notes{#notes}
+## Additional Notes
 
 A difficult part of the proxy implementation lies in `CreateClient()`:
 
