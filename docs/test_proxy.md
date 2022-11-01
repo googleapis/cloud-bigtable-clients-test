@@ -12,7 +12,7 @@ The purpose of test proxies is to allow tests to be executed across different cl
 First, please familiarize yourself with building a gRPC server in your selected language
 ([Guidance](https://grpc.io/docs/languages/)). For examples of successfully implemented proxies,
 see the Java proxy (coming soon) and the
-[C++ proxy](https://github.com/dbolduc/google-cloud-cpp/tree/cbt-test-proxy-dev/google/cloud/bigtable/cbt_test_proxy).
+[C++ proxy](https://github.com/dbolduc/google-cloud-cpp/tree/cbt-test-proxy-dev-flattened/google/cloud/bigtable/cbt_test_proxy).
 
 Second, you need to implement each individual method in the proxy
 ([Proto definition](https://github.com/googleapis/cloud-bigtable-clients-test/blob/main/testproxypb/v2_test_proxy.proto)):
