@@ -9,9 +9,11 @@ The purpose of test proxies is to allow tests to be executed across different cl
 
 ## Steps
 
-First, please familiarize yourself with building a gRPC server in your selected language
-([Guidance](https://grpc.io/docs/languages/)). For examples of successfully implemented proxies,
-see the Java proxy (coming soon) and the
+First, please familiarize yourself with building a gRPC server in your selected
+language ([Guidance](https://grpc.io/docs/languages/)). For examples of
+successfully implemented proxies, see the Java proxy (coming soon),
+[Go proxy](https://github.com/googleapis/google-cloud-go/tree/main/bigtable/internal/testproxy),
+and the
 [C++ proxy](https://github.com/dbolduc/google-cloud-cpp/tree/cbt-test-proxy-dev-flattened/google/cloud/bigtable/cbt_test_proxy).
 
 Second, you need to implement each individual method in the proxy
@@ -25,8 +27,13 @@ Second, you need to implement each individual method in the proxy
 *   `SampleRowKeys()`
 *   `ReadModifyWriteRow()`
 
-You can use either sync or async mode of the client library. Note that some clients may only support one mode.
-If your client supports both modes, you can build two separate test proxy binaries, and test both modes.
+You can use either sync or async mode of the client library. Note that some
+clients may only support one mode. If your client supports both modes, you can
+build two separate test proxy binaries, and test both modes. In implementing the
+data methods, you may need to convert between the raw proto message and the data
+type of your client library (the latter is generally eaiser to work with in
+your specific client language). Such overhead is a downside of introducing the
+test proxy.
 
 Third, you should also implement a **`main`** function to bring up the proxy
 server and add a command line parameter to allow specifying a valid port number
@@ -64,8 +71,11 @@ There may be confusion about `CloseClient()` and `RemoveClient()`, the key ideas
 are:
 
 *   `CloseClient()` makes the client not accept new requests. For inflight
-    requests, the desirable result is that they are not cancelled (Different
-    client libraries may have discrepancy here).
-*   `RemoveClient()` removes the client object from the map/hash/dict, so proxy
-    user can no longer see the object. `RemoveClient()` is expected to be called
-    after `CloseClient()` to avoid resource leak.
+    requests, the desirable result is that they are not cancelled. If your
+    client does not support closing client, then you can implement the method as
+    no-op; If your client will cancel inflight requests on closing, then please
+    document the behavior clearly, and skip the relevant tests in your
+    continuous integration.
+*   `RemoveClient()` removes the client object from the map/hash/dict, so that
+    the proxy user can no longer see the object. `RemoveClient()` should be
+    called after `CloseClient()`.

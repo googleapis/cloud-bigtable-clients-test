@@ -67,6 +67,8 @@ Assuming you have built the proxy binary already, then you can do the following:
 You may want to skip some test cases which are not yet applicable to your client library.
 As Golang only allows us to select the test cases to run, we provide a
 [naming convention](docs/test_case_naming.md) to facilitate test skipping.
+Update: `-skip` will be supported
+([feature request](https://github.com/golang/go/issues/41583)).
 
 The command is
 
