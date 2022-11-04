@@ -17,6 +17,7 @@ package tests
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
@@ -214,5 +215,71 @@ func TestReadModifyWriteRow_NoRetry_TransientError(t *testing.T) {
 	assert.NotEmpty(t, res)
 	assert.Equal(t, int32(codes.Unavailable), res.GetStatus().GetCode())
 	assert.Equal(t, 1, len(records))
+}
+
+// TestReadModifyWriteRow_GenericClientGap_CloseClient tests that client doesn't kill inflight requests
+// after client closing, but will reject new requests.
+func TestReadModifyWriteRow_GenericClientGap_CloseClient(t *testing.T) {
+	// 0. Common variable
+	increments := []int64{10, 2}
+	appends := []string{"append"}
+	rowKeys := []string{"op0-row", "op1-row", "op2-row", "op3-row", "op4-row", "op5-row"}
+	halfBatchSize := len(rowKeys) / 2
+	clientID := t.Name()
+	const requestRecorderCapacity = 10
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *readModifyWriteRowReqRecord, requestRecorderCapacity)
+	actions := make([]*readModifyWriteRowAction, 2 * halfBatchSize)
+	for i := 0; i < 2 * halfBatchSize; i++ {
+		actions[i] = &readModifyWriteRowAction{
+			row: dummyResultRow([]byte(rowKeys[i]), increments, appends),
+			delayStr: "2s",
+		}
+	}
+	server := initMockServer(t)
+	server.ReadModifyWriteRowFn = mockReadModifyWriteRowFnSimple(recorder, actions...)
+
+	// 2. Build the requests to test proxy
+	reqsBatchOne := make([]*testproxypb.ReadModifyWriteRowRequest, halfBatchSize) // Will be finished
+	reqsBatchTwo := make([]*testproxypb.ReadModifyWriteRowRequest, halfBatchSize) // Will be rejected by client
+	for i := 0; i < halfBatchSize; i++ {
+		reqsBatchOne[i] = &testproxypb.ReadModifyWriteRowRequest{
+			ClientId: clientID,
+			Request: dummyReadModifyWriteRowRequest("table", []byte(rowKeys[i]), increments, appends),
+		}
+		reqsBatchTwo[i] = &testproxypb.ReadModifyWriteRowRequest{
+			ClientId:  clientID,
+			Request: dummyReadModifyWriteRowRequest(
+				"table", []byte(rowKeys[i + halfBatchSize]), increments, appends),
+		}
+	}
+
+	// 3. Perform the operations via test proxy
+	setUp(t, server, clientID, nil)
+	defer tearDown(t, server, clientID)
+
+	closeClientAfter := time.Second
+	resultsBatchOne := doReadModifyWriteRowOpsCore(t, clientID, reqsBatchOne, &closeClientAfter)
+	resultsBatchTwo := doReadModifyWriteRowOpsCore(t, clientID, reqsBatchTwo, nil)
+
+	// 4a. Check that server only receives batch-one requests
+	assert.Equal(t, halfBatchSize, len(recorder))
+
+	// 4b. Check that all the batch-one requests succeeded
+	checkResultOkStatus(t, resultsBatchOne...)
+	for i := 0; i < halfBatchSize; i++ {
+		assert.Equal(t, rowKeys[i], string(resultsBatchOne[i].Row.Key))
+	}
+
+	// 4c. Check that all the batch-two requests failed at the proxy level:
+	// the proxy tries to use close client. Client and server have nothing to blame.
+	// We are a little permissive here by just checking if failures occur.
+	for i := 0; i < halfBatchSize; i++ {
+		if resultsBatchTwo[i] == nil {
+			continue
+		}
+		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
+	}
 }
 

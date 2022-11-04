@@ -383,3 +383,69 @@ func TestMutateRows_Generic_MultiStreams(t *testing.T) {
 	checkRequestsAreWithin(t, 1000, recorder)
 }
 
+// TestMutateRows_GenericClientGap_CloseClient tests that client doesn't kill inflight requests after
+// client closing, but will reject new requests.
+func TestMutateRows_GenericClientGap_CloseClient(t *testing.T) {
+	// 0. Common variable
+	rowKeys := [][]string{
+		[]string{"op0-row-a", "op0-row-b"},
+		[]string{"op1-row-a", "op1-row-b"},
+		[]string{"op2-row-a", "op2-row-b"},
+		[]string{"op3-row-a", "op3-row-b"},
+		[]string{"op4-row-a", "op4-row-b"},
+		[]string{"op5-row-a", "op5-row-b"},
+	}
+	halfBatchSize := len(rowKeys) / 2
+	clientID := t.Name()
+	const requestRecorderCapacity = 10
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *mutateRowsReqRecord, requestRecorderCapacity)
+	actions := make([]*mutateRowsAction, 2 * halfBatchSize)
+	for i := 0; i < 2 * halfBatchSize; i++ {
+		actions[i] = &mutateRowsAction{
+			data: buildEntryData([]int{0, 1}, nil, 0),
+			delayStr: "2s",
+		}
+	}
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFnSimple(recorder, actions...)
+
+	// 2. Build the requests to test proxy
+	reqsBatchOne := make([]*testproxypb.MutateRowsRequest, halfBatchSize) // Will be finished
+	reqsBatchTwo := make([]*testproxypb.MutateRowsRequest, halfBatchSize) // Will be rejected by client
+	for i := 0; i < halfBatchSize; i++ {
+		reqsBatchOne[i] = &testproxypb.MutateRowsRequest{
+			ClientId: clientID,
+			Request: dummyMutateRowsRequestCore("table", rowKeys[i]),
+		}
+		reqsBatchTwo[i] = &testproxypb.MutateRowsRequest{
+			ClientId:  clientID,
+			Request: dummyMutateRowsRequestCore("table", rowKeys[i + halfBatchSize]),
+		}
+	}
+
+	// 3. Perform the operations via test proxy
+	setUp(t, server, clientID, nil)
+	defer tearDown(t, server, clientID)
+
+	closeClientAfter := time.Second
+	resultsBatchOne := doMutateRowsOpsCore(t, clientID, reqsBatchOne, &closeClientAfter)
+	resultsBatchTwo := doMutateRowsOpsCore(t, clientID, reqsBatchTwo, nil)
+
+	// 4a. Check that server only receives batch-one requests
+	assert.Equal(t, halfBatchSize, len(recorder))
+
+	// 4b. Check that all the batch-one requests succeeded
+	checkResultOkStatus(t, resultsBatchOne...)
+
+	// 4c. Check that all the batch-two requests failed at the proxy level:
+	// the proxy tries to use close client. Client and server have nothing to blame.
+	// We are a little permissive here by just checking if failures occur.
+	for i := 0; i < halfBatchSize; i++ {
+		if resultsBatchTwo[i] == nil {
+			continue
+		}
+		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
+	}
+}

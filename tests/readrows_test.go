@@ -525,3 +525,92 @@ func TestReadRows_NoRetry_OpenEndUnspecifiedStart(t *testing.T) {
 	res := doReadRowsOp(t, server, &req, nil)
 	assert.Len(t, res.Row, 1)
 }
+
+// TestReadRows_GenericClientGap_CloseClient tests that client doesn't kill inflight requests after
+// client closing, but will reject new requests.
+func TestReadRows_GenericClientGap_CloseClient(t *testing.T) {
+	// 0. Common variable
+	rowKeys := [][]string{
+		[]string{"op0-row-a", "op0-row-b"},
+		[]string{"op1-row-a", "op1-row-b"},
+		[]string{"op2-row-a", "op2-row-b"},
+		[]string{"op3-row-a", "op3-row-b"},
+		[]string{"op4-row-a", "op4-row-b"},
+		[]string{"op5-row-a", "op5-row-b"},
+	}
+	halfBatchSize := len(rowKeys) / 2
+	clientID := t.Name()
+	const requestRecorderCapacity = 10
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *readRowsReqRecord, requestRecorderCapacity)
+	actions := make([]*readRowsAction, 2 * halfBatchSize)
+	for i := 0; i < 2 * halfBatchSize; i++ {
+		// Each request will get a different response.
+		actions[i] = &readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData(rowKeys[i][0], fmt.Sprintf("value%d-a", i), Commit),
+				dummyChunkData(rowKeys[i][1], fmt.Sprintf("value%d-b", i), Commit),
+			},
+			delayStr: "2s",
+		}
+	}
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, actions...)
+
+	// 2. Build the requests to test proxy
+	reqsBatchOne := make([]*testproxypb.ReadRowsRequest, halfBatchSize) // Will be finished
+	reqsBatchTwo := make([]*testproxypb.ReadRowsRequest, halfBatchSize) // Will be rejected by client
+	for i := 0; i < halfBatchSize; i++ {
+		reqsBatchOne[i] = &testproxypb.ReadRowsRequest{
+			ClientId: clientID,
+			Request: &btpb.ReadRowsRequest{
+				TableName: buildTableName("table"),
+				Rows: &btpb.RowSet{
+					RowKeys: [][]byte{[]byte(rowKeys[i][0]), []byte(rowKeys[i][1])},
+				},
+			},
+		}
+		reqsBatchTwo[i] = &testproxypb.ReadRowsRequest{
+			ClientId:  clientID,
+			Request: &btpb.ReadRowsRequest{
+				TableName: buildTableName("table"),
+				Rows: &btpb.RowSet{
+					RowKeys: [][]byte{
+						[]byte(rowKeys[i + halfBatchSize][0]),
+						[]byte(rowKeys[i + halfBatchSize][1]),
+					},
+				},
+			},
+		}
+	}
+
+	// 3. Perform the operations via test proxy
+	setUp(t, server, clientID, nil)
+	defer tearDown(t, server, clientID)
+
+	closeClientAfter := time.Second
+	resultsBatchOne := doReadRowsOpsCore(t, clientID, reqsBatchOne, &closeClientAfter)
+	resultsBatchTwo := doReadRowsOpsCore(t, clientID, reqsBatchTwo, nil)
+
+	// 4a. Check that server only receives batch-one requests
+	assert.Equal(t, halfBatchSize, len(recorder))
+
+	// 4b. Check that all the batch-one requests succeeded
+	checkResultOkStatus(t, resultsBatchOne...)
+	for i := 0; i < halfBatchSize; i++ {
+		assert.Equal(t, rowKeys[i][0], string(resultsBatchOne[i].Row[0].Key))
+		assert.Equal(t, rowKeys[i][1], string(resultsBatchOne[i].Row[1].Key))
+	}
+
+	// 4c. Check that all the batch-two requests failed at the proxy level:
+	// the proxy tries to use close client. Client and server have nothing to blame.
+	// We are a little permissive here by just checking if failures occur.
+	for i := 0; i < halfBatchSize; i++ {
+		if resultsBatchTwo[i] == nil {
+			continue
+		}
+		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
+	}
+}
+
