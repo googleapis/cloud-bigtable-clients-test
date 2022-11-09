@@ -16,6 +16,8 @@ package tests
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,7 +44,7 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 	tableName := buildTableName("table")
 
 	// 1. Instantiate the mock server
-	// Don't call mockReadRowsFn() as the behavior is to record metadata of the request.
+	// Don't call mockReadRowsFn() as the behavior is to record metadata of the request
 	mdRecords := make(chan metadata.MD, 1)
 	server := initMockServer(t)
 	server.ReadRowsFn = func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
@@ -62,8 +64,14 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
-	assert.NotEmpty(t, md["x-goog-api-client"])
-	assert.Contains(t, md["x-goog-request-params"][0], tableName)
+	if len(md["user-agent"]) == 0 && len(md["x-goog-api-client"]) == 0 {
+		assert.Fail(t, "Client info is missing in the request header")
+	}
+
+	resource := md["x-goog-request-params"][0]
+        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+		assert.Fail(t, "Resource info is missing in the request header")
+	}
 }
 
 // TestReadRows_NoRetry_OutOfOrderError tests that client will fail on receiving out of order row keys.

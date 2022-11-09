@@ -15,13 +15,53 @@
 package tests
 
 import (
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/grpc/metadata"
 )
+
+// TestSampleRowKeys_Generic_Headers tests that SampleRowKeys request has client and resource info
+// in the header.
+func TestSampleRowKeys_Generic_Headers(t *testing.T) {
+	// 0. Common variables
+	tableName := buildTableName("table")
+
+	// 1. Instantiate the mock server
+	// Don't call mockSampleRowKeysFn() as the behavior is to record metadata of the request
+	mdRecords := make(chan metadata.MD, 1)
+	server := initMockServer(t)
+	server.SampleRowKeysFn = func(req *btpb.SampleRowKeysRequest, srv btpb.Bigtable_SampleRowKeysServer) error {
+		md, _ := metadata.FromIncomingContext(srv.Context())
+		mdRecords <- md
+		return nil
+	}
+
+	// 2. Build the request to test proxy
+	req := testproxypb.SampleRowKeysRequest{
+		ClientId: t.Name(),
+		Request: &btpb.SampleRowKeysRequest{TableName: tableName},
+	}
+
+	// 3. Perform the operation via test proxy
+	doSampleRowKeysOp(t, server, &req, nil)
+
+	// 4. Check the request headers in the metadata
+	md := <-mdRecords
+	if len(md["user-agent"]) == 0 && len(md["x-goog-api-client"]) == 0 {
+		assert.Fail(t, "Client info is missing in the request header")
+	}
+
+	resource := md["x-goog-request-params"][0]
+        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+		assert.Fail(t, "Resource info is missing in the request header")
+	}
+}
 
 // TestSampleRowKeys_NoRetry_NoEmptyKey tests that client should accept a list with no empty key.
 func TestSampleRowKeys_NoRetry_NoEmptyKey(t *testing.T) {

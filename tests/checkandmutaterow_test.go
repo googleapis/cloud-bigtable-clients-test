@@ -15,6 +15,9 @@
 package tests
 
 import (
+	"context"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 )
 
 // dummyCheckAndMutateRowRequest returns a dummy CheckAndMutateRowRequest. For simplicity,
@@ -48,6 +52,47 @@ func dummyCheckAndMutateRowRequest(tableID string, rowKey []byte, predicateMatch
 	}
 
 	return req
+}
+
+// TestCheckAndMutateRow_Generic_Headers tests that CheckAndMutateRow request has client and
+// resource info in the header.
+func TestCheckAndMutateRow_Generic_Headers(t *testing.T) {
+	// 0. Common variables
+	const predicateMatched bool = true
+	rowKey := []byte("row-01")
+	const tableID string = "table"
+	tableName := buildTableName(tableID)
+
+	// 1. Instantiate the mock server
+	// Don't call mockCheckAndMutateRowFn() as the behavior is to record metadata of the request
+	mdRecords := make(chan metadata.MD, 1)
+	server := initMockServer(t)
+	server.CheckAndMutateRowFn = func(ctx context.Context, req *btpb.CheckAndMutateRowRequest) (*btpb.CheckAndMutateRowResponse, error) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		mdRecords <- md
+
+		return &btpb.CheckAndMutateRowResponse{PredicateMatched: predicateMatched}, nil
+	}
+
+	// 2. Build the request to test proxy
+	req := testproxypb.CheckAndMutateRowRequest{
+		ClientId: t.Name(),
+		Request:  dummyCheckAndMutateRowRequest(tableID, rowKey, predicateMatched, 1),
+	}
+
+	// 3. Perform the operation via test proxy
+	doCheckAndMutateRowOp(t, server, &req, nil)
+
+	// 4. Check the request headers in the metadata
+	md := <-mdRecords
+	if len(md["user-agent"]) == 0 && len(md["x-goog-api-client"]) == 0 {
+		assert.Fail(t, "Client info is missing in the request header")
+	}
+
+	resource := md["x-goog-request-params"][0]
+        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+		assert.Fail(t, "Resource info is missing in the request header")
+	}
 }
 
 // TestCheckAndMutateRow_NoRetry_TrueMutations tests that client can request true mutations.

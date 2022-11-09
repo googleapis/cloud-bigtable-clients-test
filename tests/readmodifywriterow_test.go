@@ -15,7 +15,10 @@
 package tests
 
 import (
+	"context"
 	"encoding/binary"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -102,6 +106,48 @@ func dummyResultRow(rowKey []byte, increments []int64, appends []string) *btpb.R
 		},
 	}
 	return row
+}
+
+// TestReadModifyWriteRow_Generic_Headers tests that ReadModifyWriteRow request has client and
+// resource info in the header.
+func TestReadModifyWriteRow_Generic_Headers(t *testing.T) {
+	// 0. Common variables
+	increments := []int64{10, 2}
+	appends := []string{"str1", "str2"}
+	rowKey := []byte("row-01")
+	const tableID string = "table"
+	tableName := buildTableName(tableID)
+
+	// 1. Instantiate the mock server
+	// Don't call mockReadRowsFn() as the behavior is to record metadata of the request
+	mdRecords := make(chan metadata.MD, 1)
+	server := initMockServer(t)
+	server.ReadModifyWriteRowFn = func(ctx context.Context, req *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		mdRecords <- md
+
+		return &btpb.ReadModifyWriteRowResponse{Row: dummyResultRow(rowKey, increments, appends)}, nil
+	}
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadModifyWriteRowRequest{
+		ClientId: t.Name(),
+		Request: dummyReadModifyWriteRowRequest(tableID, rowKey, increments, appends),
+	}
+
+	// 3. Perform the operation via test proxy
+	doReadModifyWriteRowOp(t, server, &req, nil)
+
+	// 4. Check the request headers in the metadata
+	md := <-mdRecords
+	if len(md["user-agent"]) == 0 && len(md["x-goog-api-client"]) == 0 {
+		assert.Fail(t, "Client info is missing in the request header")
+	}
+
+	resource := md["x-goog-request-params"][0]
+        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+		assert.Fail(t, "Resource info is missing in the request header")
+	}
 }
 
 // TestReadModifyWriteRow_NoRetry_MultiValues tests that client can increment & append multiple values.

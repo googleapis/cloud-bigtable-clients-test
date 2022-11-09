@@ -16,7 +16,9 @@ package tests
 
 import (
 	"log"
+	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,9 +94,10 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	const numRows int = 2
 	const tableID string = "table"
+	tableName := buildTableName(tableID)
 
 	// 1. Instantiate the mock server
-	// Don't call mockMutateRowsFn() as the behavior is to record metadata of the request.
+	// Don't call mockMutateRowsFn() as the behavior is to record metadata of the request
 	mdRecords := make(chan metadata.MD, 1)
 	server := initMockServer(t)
 	server.MutateRowsFn = func(req *btpb.MutateRowsRequest, srv btpb.Bigtable_MutateRowsServer) error {
@@ -124,8 +127,14 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
-	assert.NotEmpty(t, md["x-goog-api-client"])
-	assert.Contains(t, md["x-goog-request-params"][0], buildTableName(tableID))
+	if len(md["user-agent"]) == 0 && len(md["x-goog-api-client"]) == 0 {
+		assert.Fail(t, "Client info is missing in the request header")
+	}
+
+	resource := md["x-goog-request-params"][0]
+        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+		assert.Fail(t, "Resource info is missing in the request header")
+	}
 }
 
 // TestMutateRows_NoRetry_NonTransientErrors tests that client will not retry on non-transient errors.

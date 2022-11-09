@@ -17,6 +17,8 @@ package tests
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,9 +27,48 @@ import (
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
+
+// TestReadRow_Generic_Headers tests that ReadRow request has client and resource info in the
+// header.
+func TestReadRow_Generic_Headers(t *testing.T) {
+	// 0. Common variables
+	tableName := buildTableName("table")
+
+	// 1. Instantiate the mock server
+	// Don't call mockReadRowsFn() as the behavior is to record metadata of the request
+	mdRecords := make(chan metadata.MD, 1)
+	server := initMockServer(t)
+	server.ReadRowsFn = func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
+		md, _ := metadata.FromIncomingContext(srv.Context())
+		mdRecords <- md
+		return nil
+	}
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowRequest{
+		ClientId: t.Name(),
+		TableName: tableName,
+		RowKey: "row-01",
+	}
+
+	// 3. Perform the operation via test proxy
+	doReadRowOp(t, server, &req, nil)
+
+	// 4. Check the request headers in the metadata
+	md := <-mdRecords
+	if len(md["user-agent"]) == 0 && len(md["x-goog-api-client"]) == 0 {
+		assert.Fail(t, "Client info is missing in the request header")
+	}
+
+	resource := md["x-goog-request-params"][0]
+        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+		assert.Fail(t, "Resource info is missing in the request header")
+	}
+}
 
 // TestReadRow_NoRetry_PointReadDeadline tests that client will set deadline for point read.
 func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
