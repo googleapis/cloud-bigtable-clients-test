@@ -6,7 +6,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/google/go-cmp v0.5.9
 	github.com/stretchr/testify v1.8.1
-	google.golang.org/genproto v0.0.0-20221107162902-2d387536bcdd
+	google.golang.org/genproto v0.0.0-20221109142239-94d6d90a7d66
 	google.golang.org/grpc v1.50.1
 	google.golang.org/protobuf v1.28.1
 )
