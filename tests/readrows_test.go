@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 // dummyChunkData returns a chunkData object with hardcoded family name and qualifier.
@@ -37,8 +38,8 @@ func dummyChunkData(rowKey string, value string, status RowStatus) chunkData {
 		rowKey: []byte(rowKey), familyName: "f", qualifier: "col", value: value, status: status}
 }
 
-// TestReadRows_Generic_Headers tests that ReadRows request has client and resource info in the
-// header.
+// TestReadRows_Generic_Headers tests that ReadRows request has client and resource info, as well as
+// app_profile_id in the header.
 func TestReadRows_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	tableName := buildTableName("table")
@@ -72,6 +73,7 @@ func TestReadRows_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
+	assert.Contains(t, resource, "app_profile_id=")
 }
 
 // TestReadRows_NoRetry_OutOfOrderError tests that client will fail on receiving out of order row keys.
@@ -130,7 +132,7 @@ func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 	// 3. Perform the operation via test proxy
 	res := doReadRowsOp(t, server, &req, nil)
 
-	// 4. Verify that the read succeeds
+	// 4a. Verify that the read succeeds
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 1, len(res.GetRow()))
 	assert.Equal(t, "row-01", string(res.Row[0].Key))
@@ -139,6 +141,9 @@ func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 // TestReadRows_Retry_PausedScan tests that client will transparently resume the scan when a stream
 // is paused.
 func TestReadRows_Retry_PausedScan(t *testing.T) {
+	// 0. Common variables
+	clientReq := &btpb.ReadRowsRequest{TableName: buildTableName("table")}
+
 	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 2)
 	sequence := []*readRowsAction{
@@ -156,7 +161,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
 		ClientId: t.Name(),
-		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
+		Request: clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -168,11 +173,13 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 	assert.Equal(t, "row-01", string(res.Row[0].Key))
 	assert.Equal(t, "row-05", string(res.Row[1].Key))
 
-	// 4b. Verify that client sent the retry request properly
-	loggedReq := <-recorder
-	loggedRetry := <-recorder
-	assert.Empty(t, loggedReq.req.GetRows().GetRowRanges())
-	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("row-01")}))
+	// 4b. Verify that client sent the requests properly
+	origReq := <-recorder
+	retryReq := <-recorder
+	if diff := cmp.Diff(clientReq, origReq.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
+	assert.True(t, cmp.Equal(retryReq.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("row-01")}))
 }
 
 // TestReadRows_Retry_LastScannedRow tests that client will resume from last scan row key.

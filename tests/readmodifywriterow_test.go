@@ -109,7 +109,7 @@ func dummyResultRow(rowKey []byte, increments []int64, appends []string) *btpb.R
 }
 
 // TestReadModifyWriteRow_Generic_Headers tests that ReadModifyWriteRow request has client and
-// resource info in the header.
+// resource info, as well as app_profile_id in the header.
 func TestReadModifyWriteRow_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	increments := []int64{10, 2}
@@ -148,6 +148,7 @@ func TestReadModifyWriteRow_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
+	assert.Contains(t, resource, "app_profile_id=")
 }
 
 // TestReadModifyWriteRow_NoRetry_MultiValues tests that client can increment & append multiple values.
@@ -175,7 +176,7 @@ func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 
 	// 4. Check that the dummy request is sent and the dummy row is returned
 	checkResultOkStatus(t, res)
-	loggedReq := <- recorder
+	loggedReq := <-recorder
 	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
 		t.Errorf("diff found (-want +got):\n%s", diff)
 	}

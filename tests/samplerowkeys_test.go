@@ -20,14 +20,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
-// TestSampleRowKeys_Generic_Headers tests that SampleRowKeys request has client and resource info
-// in the header.
+// TestSampleRowKeys_Generic_Headers tests that SampleRowKeys request has client and resource
+// info, as well as app_profile_id in the header.
 func TestSampleRowKeys_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	tableName := buildTableName("table")
@@ -61,37 +63,48 @@ func TestSampleRowKeys_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
+	assert.Contains(t, resource, "app_profile_id=")
 }
 
 // TestSampleRowKeys_NoRetry_NoEmptyKey tests that client should accept a list with no empty key.
 func TestSampleRowKeys_NoRetry_NoEmptyKey(t *testing.T) {
+	// 0. Common variables
+	clientReq := &btpb.SampleRowKeysRequest{TableName: buildTableName("table")}
+
 	// 1. Instantiate the mock server
+	recorder := make(chan *sampleRowKeysReqRecord, 1)
 	sequence := []sampleRowKeysAction{
 		sampleRowKeysAction{rowKey: []byte("row-31"), offsetBytes: 30},
 		sampleRowKeysAction{rowKey: []byte("row-98"), offsetBytes: 65},
 	}
 	server := initMockServer(t)
-	server.SampleRowKeysFn = mockSampleRowKeysFn(nil, sequence)
+	server.SampleRowKeysFn = mockSampleRowKeysFn(recorder, sequence)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.SampleRowKeysRequest{
 		ClientId: t.Name(),
-		Request:  &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
+		Request: clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
 	res := doSampleRowKeysOp(t, server, &req, nil)
 
-	// 4. Check that the operation succeeded
+	// 4a. Check that the operation succeeded
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(res.GetSample()))
 	assert.Equal(t, "row-31", string(res.GetSample()[0].RowKey))
 	assert.Equal(t, "row-98", string(res.GetSample()[1].RowKey))
+
+	// 4b. Check that the request is received as expected
+	loggedReq := <-recorder
+	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
 }
 
 // TestSampleRowKeys_Generic_MultiStreams tests that client can have multiple concurrent streams.
 func TestSampleRowKeys_Generic_MultiStreams(t *testing.T) {
-	// 0. Common variable
+	// 0. Common variables
 	const concurrency = 5
 	const requestRecorderCapacity = 10
 

@@ -24,10 +24,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 // dummyMutateRowRequest returns a dummy MutateRowRequest. The number of mutations is customizable
@@ -55,8 +57,8 @@ func dummyMutateRowRequest(tableID string, rowKey []byte, numMutations int) *btp
 	return req
 }
 
-// TestMutateRow_Generic_Headers tests that MutateRow request has client and resource info in the
-// header.
+// TestMutateRow_Generic_Headers tests that MutateRow request has client and resource info, as well
+// as app_profile_id in the header.
 func TestMutateRow_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	const tableID string = "table"
@@ -92,6 +94,7 @@ func TestMutateRow_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
+	assert.Contains(t, resource, "app_profile_id=")
 }
 
 // TestMutateRow_NoRetry_NonprintableByteKey tests that client can specify non-printable byte strings as row key.
@@ -118,12 +121,15 @@ func TestMutateRow_NoRetry_NonprintableByteKey(t *testing.T) {
 
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
-	loggedReq := <- recorder
+	loggedReq := <-recorder
 	assert.Equal(t, 0, bytes.Compare(nonprintableByteKey, loggedReq.req.RowKey))
 }
 
 // TestMutateRow_NoRetry_MultipleMutations tests that client can specify multiple mutations for a row.
 func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
+	// 0. Common variables
+	clientReq := dummyMutateRowRequest("table", []byte("row-01"), 2)
+
 	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowReqRecord, 1)
 	action := &mutateRowAction{}
@@ -133,7 +139,7 @@ func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowRequest{
 		ClientId: t.Name(),
-		Request:  dummyMutateRowRequest("table", []byte("row-01"), 2),
+		Request: clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -141,13 +147,16 @@ func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
 
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
-	loggedReq := <- recorder
+	loggedReq := <-recorder
 	assert.Equal(t, 2, len(loggedReq.req.Mutations))
+	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
 }
 
 // TestMutateRow_Generic_MultiStreams tests that client can have multiple concurrent streams.
 func TestMutateRow_Generic_MultiStreams(t *testing.T) {
-	// 0. Common variable
+	// 0. Common variables
 	rowKeys := []string{"op0-row", "op1-row", "op2-row", "op3-row", "op4-row"}
 	concurrency := len(rowKeys)
 	const requestRecorderCapacity = 10

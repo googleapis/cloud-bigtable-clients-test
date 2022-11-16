@@ -21,11 +21,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 // dummyCheckAndMutateRowRequest returns a dummy CheckAndMutateRowRequest. For simplicity,
@@ -55,7 +57,7 @@ func dummyCheckAndMutateRowRequest(tableID string, rowKey []byte, predicateMatch
 }
 
 // TestCheckAndMutateRow_Generic_Headers tests that CheckAndMutateRow request has client and
-// resource info in the header.
+// resource info, as well as app_profile_id in the header.
 func TestCheckAndMutateRow_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	const predicateMatched bool = true
@@ -93,6 +95,7 @@ func TestCheckAndMutateRow_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
+	assert.Contains(t, resource, "app_profile_id=")
 }
 
 // TestCheckAndMutateRow_NoRetry_TrueMutations tests that client can request true mutations.
@@ -100,6 +103,7 @@ func TestCheckAndMutateRow_NoRetry_TrueMutations(t *testing.T) {
 	// 0. Common variable
 	const predicateMatched bool = true
 	rowKey := []byte("row-01")
+	clientReq := dummyCheckAndMutateRowRequest("table", rowKey, predicateMatched, 2)
 
 	// 1. Instantiate the mock server
 	recorder := make(chan *checkAndMutateRowReqRecord, 1)
@@ -110,7 +114,7 @@ func TestCheckAndMutateRow_NoRetry_TrueMutations(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
 		ClientId: t.Name(),
-		Request:  dummyCheckAndMutateRowRequest("table", rowKey, predicateMatched, 2),
+		Request: clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -119,9 +123,12 @@ func TestCheckAndMutateRow_NoRetry_TrueMutations(t *testing.T) {
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
 	assert.True(t, res.Result.PredicateMatched)
-	loggedReq := <- recorder
+	loggedReq := <-recorder
 	assert.Equal(t, 2, len(loggedReq.req.TrueMutations))
 	assert.Empty(t, loggedReq.req.FalseMutations)
+	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
 }
 
 // TestCheckAndMutateRow_NoRetry_FalseMutations tests that client can request false mutations.
@@ -148,7 +155,7 @@ func TestCheckAndMutateRow_NoRetry_FalseMutations(t *testing.T) {
 	// 4. Check that the operation succeeded
 	checkResultOkStatus(t, res)
 	assert.False(t, res.Result.PredicateMatched)
-	loggedReq := <- recorder
+	loggedReq := <-recorder
 	assert.Equal(t, 2, len(loggedReq.req.FalseMutations))
 	assert.Empty(t, loggedReq.req.TrueMutations)
 }

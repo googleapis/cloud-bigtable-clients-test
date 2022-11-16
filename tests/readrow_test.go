@@ -32,8 +32,8 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-// TestReadRow_Generic_Headers tests that ReadRow request has client and resource info in the
-// header.
+// TestReadRow_Generic_Headers tests that ReadRow request has client and resource info, as well as
+// app_profile_id in the header.
 func TestReadRow_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	tableName := buildTableName("table")
@@ -68,10 +68,15 @@ func TestReadRow_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
+	assert.Contains(t, resource, "app_profile_id=")
 }
 
 // TestReadRow_NoRetry_PointReadDeadline tests that client will set deadline for point read.
 func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
+	// 0. Common variables
+	const rowKey string = "row-01"
+	tableName := buildTableName("table")
+
 	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 1)
 	action := &readRowsAction{
@@ -84,8 +89,8 @@ func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowRequest{
 		ClientId:  t.Name(),
-		TableName: buildTableName("table"),
-		RowKey:    "row-01",
+		TableName: tableName,
+		RowKey:    rowKey,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -96,12 +101,16 @@ func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
 
 	// 4a. Check the runtime
 	curTs := time.Now()
-	origReq := <-recorder
-	runTimeSecs := int(curTs.Unix() - origReq.ts.Unix())
+	loggedReq := <-recorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
 	assert.GreaterOrEqual(t, runTimeSecs, 2)
 	assert.Less(t, runTimeSecs, 5)
 
-	// 4b. Check the DeadlineExceeded error
+	// 4b. Check the request is received as expected
+	assert.Equal(t, rowKey, string(loggedReq.req.GetRows().GetRowKeys()[0]))
+	assert.Equal(t, int64(1), loggedReq.req.GetRowsLimit())
+
+	// 4c. Check the DeadlineExceeded error
 	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
 

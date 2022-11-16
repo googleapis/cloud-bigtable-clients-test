@@ -88,8 +88,8 @@ func dummyMutateRowsRequest(tableID string, numRows int) *btpb.MutateRowsRequest
 	return dummyMutateRowsRequestCore(tableID, rowKeys)
 }
 
-// TestMutateRows_Generic_Headers tests that MutateRows request has client and resource info in the
-// header.
+// TestMutateRows_Generic_Headers tests that MutateRows request has client and resource info, as
+// well as app_profile_id in the header.
 func TestMutateRows_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	const numRows int = 2
@@ -135,6 +135,7 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
+	assert.Contains(t, resource, "app_profile_id=")
 }
 
 // TestMutateRows_NoRetry_NonTransientErrors tests that client will not retry on non-transient errors.
