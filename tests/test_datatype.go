@@ -184,7 +184,7 @@ func (a *mutateRowsAction) Validate() {}
 // Usage:
 //  1. checkAndMutateRowAction{predicateMatched: result}
 //     Effect: server will return the predicate match result.
-//  2. checkAndMutateRowAction{predicateMatched: row, delayStr: delay}
+//  2. checkAndMutateRowAction{predicateMatched: result, delayStr: delay}
 //     Effect: server will return the predicate match result after delay.
 //  3. checkAndMutateRowAction{rpcError: error}
 //     Effect: server will return an error. Any specified predicateMatched in the same action will be ignored.

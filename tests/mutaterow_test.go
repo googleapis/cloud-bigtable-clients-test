@@ -28,8 +28,10 @@ import (
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // dummyMutateRowRequest returns a dummy MutateRowRequest. The number of mutations is customizable
@@ -248,5 +250,36 @@ func TestMutateRow_GenericClientGap_CloseClient(t *testing.T) {
 		}
 		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
 	}
+}
+
+// TestMutateRow_Generic_DeadlineExceeded tests that client-side timeout is set and respected.
+func TestMutateRow_Generic_DeadlineExceeded(t *testing.T) {
+	// 1. Instantiate the mock server
+	recorder := make(chan *mutateRowReqRecord, 1)
+	action := &mutateRowAction{delayStr: "10s"} // A long delay on the server side
+	server := initMockServer(t)
+	server.MutateRowFn = mockMutateRowFnSimple(recorder, action)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.MutateRowRequest{
+		ClientId: t.Name(),
+		Request: dummyMutateRowRequest("table", []byte("row-01"), 2),
+	}
+
+	// 3. Perform the operation via test proxy
+	timeout := durationpb.Duration{
+		Seconds: 2,
+	}
+	res := doMutateRowOp(t, server, &req, &timeout)
+	curTs := time.Now()
+
+	// 4a. Check the runtime
+	loggedReq := <-recorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
+	assert.GreaterOrEqual(t, runTimeSecs, 2)
+	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
+
+	// 4b. Check the DeadlineExceeded error
+	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
 

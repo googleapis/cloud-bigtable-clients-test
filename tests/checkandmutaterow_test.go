@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // dummyCheckAndMutateRowRequest returns a dummy CheckAndMutateRowRequest. For simplicity,
@@ -301,5 +302,43 @@ func TestCheckAndMutateRow_GenericClientGap_CloseClient(t *testing.T) {
 		}
 		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
 	}
+}
+
+// TestCheckAndMutateRow_Generic_DeadlineExceeded tests that client-side timeout is set and
+// respected.
+func TestCheckAndMutateRow_Generic_DeadlineExceeded(t *testing.T) {
+	// 0. Common variables
+	const predicateMatched bool = true
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *checkAndMutateRowReqRecord, 1)
+	action := &checkAndMutateRowAction{
+		predicateMatched: predicateMatched,
+		delayStr: "10s",
+	}
+	server := initMockServer(t)
+	server.CheckAndMutateRowFn = mockCheckAndMutateRowFnSimple(recorder, action)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.CheckAndMutateRowRequest{
+		ClientId: t.Name(),
+		Request: dummyCheckAndMutateRowRequest("table", []byte("row-01"), predicateMatched, 2),
+	}
+
+	// 3. Perform the operation via test proxy
+	timeout := durationpb.Duration{
+		Seconds: 2,
+	}
+	res := doCheckAndMutateRowOp(t, server, &req, &timeout)
+	curTs := time.Now()
+
+	// 4a. Check the runtime
+	loggedReq := <-recorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
+	assert.GreaterOrEqual(t, runTimeSecs, 2)
+	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
+
+	// 4b. Check the DeadlineExceeded error
+	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
 

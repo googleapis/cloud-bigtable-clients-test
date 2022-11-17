@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // dummyReadModifyWriteRowRequest returns a dummy ReadModifyWriteRowRequest.
@@ -328,5 +329,46 @@ func TestReadModifyWriteRow_GenericClientGap_CloseClient(t *testing.T) {
 		}
 		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
 	}
+}
+
+// TestReadModifyWriteRow_Generic_DeadlineExceeded tests that client-side timeout is set and
+// respected.
+func TestReadModifyWriteRow_Generic_DeadlineExceeded(t *testing.T) {
+	// 0. Common variables
+	increments := []int64{10, 2}
+	appends := []string{"str1", "str2"}
+	rowKey := []byte("row-01")
+	clientReq := dummyReadModifyWriteRowRequest("table", rowKey, increments, appends)
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *readModifyWriteRowReqRecord, 1)
+	action := &readModifyWriteRowAction{
+		row: dummyResultRow(rowKey, increments, appends),
+		delayStr: "10s",
+	}
+	server := initMockServer(t)
+	server.ReadModifyWriteRowFn = mockReadModifyWriteRowFnSimple(recorder, action)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadModifyWriteRowRequest{
+		ClientId: t.Name(),
+		Request: clientReq,
+	}
+
+	// 3. Perform the operation via test proxy
+	timeout := durationpb.Duration{
+		Seconds: 2,
+	}
+	res := doReadModifyWriteRowOp(t, server, &req, &timeout)
+
+	// 4a. Check the runtime
+	curTs := time.Now()
+	loggedReq := <-recorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
+	assert.GreaterOrEqual(t, runTimeSecs, 2)
+	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
+
+	// 4b. Check the DeadlineExceeded error
+	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
 

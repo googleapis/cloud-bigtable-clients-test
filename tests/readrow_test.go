@@ -71,8 +71,8 @@ func TestReadRow_Generic_Headers(t *testing.T) {
 	assert.Contains(t, resource, "app_profile_id=")
 }
 
-// TestReadRow_NoRetry_PointReadDeadline tests that client will set deadline for point read.
-func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
+// TestReadRow_Generic_DeadlineExceeded tests that client-side timeout is set and respected.
+func TestReadRow_Generic_DeadlineExceeded(t *testing.T) {
 	// 0. Common variables
 	const rowKey string = "row-01"
 	tableName := buildTableName("table")
@@ -80,8 +80,8 @@ func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
 	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, 1)
 	action := &readRowsAction{
-		chunks:   []chunkData{dummyChunkData("row-01", "v1", Commit)},
-		delayStr: "5s",
+		chunks:   []chunkData{dummyChunkData(rowKey, "v1", Commit)},
+		delayStr: "10s",
 	}
 	server := initMockServer(t)
 	server.ReadRowsFn = mockReadRowsFnSimple(recorder, action)
@@ -104,7 +104,7 @@ func TestReadRow_NoRetry_PointReadDeadline(t *testing.T) {
 	loggedReq := <-recorder
 	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
 	assert.GreaterOrEqual(t, runTimeSecs, 2)
-	assert.Less(t, runTimeSecs, 5)
+	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
 
 	// 4b. Check the request is received as expected
 	assert.Equal(t, rowKey, string(loggedReq.req.GetRows().GetRowKeys()[0]))

@@ -177,8 +177,8 @@ func TestMutateRows_NoRetry_NonTransientErrors(t *testing.T) {
 	assert.ElementsMatch(t, failedRowIndices, outputIndices)
 }
 
-// TestMutateRows_NoRetry_DeadlineExceeded tests that deadline is set correctly.
-func TestMutateRows_NoRetry_DeadlineExceeded(t *testing.T) {
+// TestMutateRows_Generic_DeadlineExceeded tests that client-side timeout is set and respected.
+func TestMutateRows_Generic_DeadlineExceeded(t *testing.T) {
 	// 0. Common variables
 	const numRows int = 1
 	const numRPCs int = 1
@@ -210,8 +210,8 @@ func TestMutateRows_NoRetry_DeadlineExceeded(t *testing.T) {
 	assert.Equal(t, numRPCs, len(recorder))
 
 	// 4b. Check the runtime
-	origReq := <-recorder
-	runTimeSecs := int(curTs.Unix() - origReq.ts.Unix())
+	loggedReq := <-recorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
 	assert.GreaterOrEqual(t, runTimeSecs, 2)
 	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
 

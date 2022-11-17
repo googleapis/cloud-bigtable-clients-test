@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // dummyChunkData returns a chunkData object with hardcoded family name and qualifier.
@@ -627,5 +628,39 @@ func TestReadRows_GenericClientGap_CloseClient(t *testing.T) {
 		}
 		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
 	}
+}
+
+// TestReadRows_Generic_DeadlineExceeded tests that client-side timeout is set and respected.
+func TestReadRows_Generic_DeadlineExceeded(t *testing.T) {
+	// 1. Instantiate the mock server
+	recorder := make(chan *readRowsReqRecord, 1)
+	action := &readRowsAction{
+		chunks:   []chunkData{dummyChunkData("row-01", "v1", Commit)},
+		delayStr: "10s",
+	}
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(recorder, action)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId:  t.Name(),
+		Request: &btpb.ReadRowsRequest{TableName: buildTableName("table")},
+	}
+
+	// 3. Perform the operation via test proxy
+	timeout := durationpb.Duration{
+		Seconds: 2,
+	}
+	res := doReadRowsOp(t, server, &req, &timeout)
+
+	// 4a. Check the runtime
+	curTs := time.Now()
+	loggedReq := <-recorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
+	assert.GreaterOrEqual(t, runTimeSecs, 2)
+	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
+
+	// 4b. Check the DeadlineExceeded error
+	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
 

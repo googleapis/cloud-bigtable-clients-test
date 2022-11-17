@@ -24,8 +24,10 @@ import (
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // TestSampleRowKeys_Generic_Headers tests that SampleRowKeys request has client and resource
@@ -197,5 +199,39 @@ func TestSampleRowKeys_GenericClientGap_CloseClient(t *testing.T) {
 		}
 		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
 	}
+}
+
+// TestSampleRowKeys_Generic_DeadlineExceeded tests that client-side timeout is set and respected.
+func TestSampleRowKeys_Generic_DeadlineExceeded(t *testing.T) {
+	// 1. Instantiate the mock server
+	recorder := make(chan *sampleRowKeysReqRecord, 1)
+	sequence := []sampleRowKeysAction{
+		sampleRowKeysAction{rowKey: []byte("row-31"), offsetBytes: 30, delayStr: "10s"},
+		sampleRowKeysAction{rowKey: []byte("row-98"), offsetBytes: 65},
+	}
+	server := initMockServer(t)
+	server.SampleRowKeysFn = mockSampleRowKeysFn(recorder, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.SampleRowKeysRequest{
+		ClientId: t.Name(),
+		Request: &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
+	}
+
+	// 3. Perform the operation via test proxy
+	timeout := durationpb.Duration{
+		Seconds: 2,
+	}
+	res := doSampleRowKeysOp(t, server, &req, &timeout)
+
+	// 4a. Check the runtime
+	curTs := time.Now()
+	loggedReq := <-recorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
+	assert.GreaterOrEqual(t, runTimeSecs, 2)
+	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
+
+	// 4b. Check the DeadlineExceeded error
+	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
 
