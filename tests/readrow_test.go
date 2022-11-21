@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !emulator
+
 // The test cases in this file will use dummyChunkData() from readrows_test.go.
 package tests
 
@@ -36,6 +38,7 @@ import (
 // app_profile_id in the header.
 func TestReadRow_Generic_Headers(t *testing.T) {
 	// 0. Common variables
+	const profileID string = "test_profile"
 	tableName := buildTableName("table")
 
 	// 1. Instantiate the mock server
@@ -56,7 +59,10 @@ func TestReadRow_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doReadRowOp(t, server, &req, nil)
+	opts := clientOpts{
+		profile: profileID,
+	}
+	doReadRowOp(t, server, &req, &opts)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -68,7 +74,7 @@ func TestReadRow_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
-	assert.Contains(t, resource, "app_profile_id=")
+	assert.Contains(t, resource, profileID)
 }
 
 // TestReadRow_Generic_DeadlineExceeded tests that client-side timeout is set and respected.
@@ -94,10 +100,10 @@ func TestReadRow_Generic_DeadlineExceeded(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	timeout := durationpb.Duration{
-		Seconds: 2,
+	opts := clientOpts{
+		timeout: &durationpb.Duration{Seconds: 2},
 	}
-	res := doReadRowOp(t, server, &req, &timeout)
+	res := doReadRowOp(t, server, &req, &opts)
 
 	// 4a. Check the runtime
 	curTs := time.Now()

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !emulator
+
 package tests
 
 import (
@@ -34,6 +36,7 @@ import (
 // info, as well as app_profile_id in the header.
 func TestSampleRowKeys_Generic_Headers(t *testing.T) {
 	// 0. Common variables
+	const profileID string = "test_profile"
 	tableName := buildTableName("table")
 
 	// 1. Instantiate the mock server
@@ -53,7 +56,10 @@ func TestSampleRowKeys_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doSampleRowKeysOp(t, server, &req, nil)
+	opts := clientOpts{
+		profile: profileID,
+	}
+	doSampleRowKeysOp(t, server, &req, &opts)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -65,7 +71,7 @@ func TestSampleRowKeys_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
-	assert.Contains(t, resource, "app_profile_id=")
+	assert.Contains(t, resource, profileID)
 }
 
 // TestSampleRowKeys_NoRetry_NoEmptyKey tests that client should accept a list with no empty key.
@@ -219,10 +225,10 @@ func TestSampleRowKeys_Generic_DeadlineExceeded(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	timeout := durationpb.Duration{
-		Seconds: 2,
+	opts := clientOpts{
+		timeout: &durationpb.Duration{Seconds: 2},
 	}
-	res := doSampleRowKeysOp(t, server, &req, &timeout)
+	res := doSampleRowKeysOp(t, server, &req, &opts)
 
 	// 4a. Check the runtime
 	curTs := time.Now()

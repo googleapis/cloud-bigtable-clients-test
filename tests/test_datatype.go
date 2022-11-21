@@ -30,6 +30,7 @@ import (
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // RowStatus is a Enum type to hold value for read row's status ranging from None
@@ -288,3 +289,11 @@ type anyAction interface {
 	*checkAndMutateRowAction | *readModifyWriteRowAction
 	Validate()
 }
+
+// clientOpts contains the custom settings of app profile id and timeout, which are used
+// when creating a client object in the test proxy.
+type clientOpts struct {
+	profile string
+	timeout *durationpb.Duration
+}
+

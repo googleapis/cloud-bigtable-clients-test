@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !emulator
+
 package tests
 
 import (
@@ -113,10 +115,11 @@ func dummyResultRow(rowKey []byte, increments []int64, appends []string) *btpb.R
 // resource info, as well as app_profile_id in the header.
 func TestReadModifyWriteRow_Generic_Headers(t *testing.T) {
 	// 0. Common variables
+	const profileID string = "test_profile"
+	const tableID string = "table"
 	increments := []int64{10, 2}
 	appends := []string{"str1", "str2"}
 	rowKey := []byte("row-01")
-	const tableID string = "table"
 	tableName := buildTableName(tableID)
 
 	// 1. Instantiate the mock server
@@ -137,7 +140,10 @@ func TestReadModifyWriteRow_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doReadModifyWriteRowOp(t, server, &req, nil)
+	opts := clientOpts{
+		profile: profileID,
+	}
+	doReadModifyWriteRowOp(t, server, &req, &opts)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -149,7 +155,7 @@ func TestReadModifyWriteRow_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
-	assert.Contains(t, resource, "app_profile_id=")
+	assert.Contains(t, resource, profileID)
 }
 
 // TestReadModifyWriteRow_NoRetry_MultiValues tests that client can increment & append multiple values.
@@ -356,10 +362,10 @@ func TestReadModifyWriteRow_Generic_DeadlineExceeded(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	timeout := durationpb.Duration{
-		Seconds: 2,
+	opts := clientOpts{
+		timeout: &durationpb.Duration{Seconds: 2},
 	}
-	res := doReadModifyWriteRowOp(t, server, &req, &timeout)
+	res := doReadModifyWriteRowOp(t, server, &req, &opts)
 
 	// 4a. Check the runtime
 	curTs := time.Now()

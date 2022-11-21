@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !emulator
+
 package tests
 
 import (
@@ -43,6 +45,7 @@ func dummyChunkData(rowKey string, value string, status RowStatus) chunkData {
 // app_profile_id in the header.
 func TestReadRows_Generic_Headers(t *testing.T) {
 	// 0. Common variables
+	const profileID string = "test_profile"
 	tableName := buildTableName("table")
 
 	// 1. Instantiate the mock server
@@ -62,7 +65,10 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doReadRowsOp(t, server, &req, nil)
+	opts := clientOpts{
+		profile: profileID,
+	}
+	doReadRowsOp(t, server, &req, &opts)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -74,7 +80,7 @@ func TestReadRows_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
-	assert.Contains(t, resource, "app_profile_id=")
+	assert.Contains(t, resource, profileID)
 }
 
 // TestReadRows_NoRetry_OutOfOrderError tests that client will fail on receiving out of order row keys.
@@ -177,7 +183,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 	// 4b. Verify that client sent the requests properly
 	origReq := <-recorder
 	retryReq := <-recorder
-	if diff := cmp.Diff(clientReq, origReq.req, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(clientReq, origReq.req, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
 		t.Errorf("diff found (-want +got):\n%s", diff)
 	}
 	assert.True(t, cmp.Equal(retryReq.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("row-01")}))
@@ -648,10 +654,10 @@ func TestReadRows_Generic_DeadlineExceeded(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	timeout := durationpb.Duration{
-		Seconds: 2,
+	opts := clientOpts{
+		timeout: &durationpb.Duration{Seconds: 2},
 	}
-	res := doReadRowsOp(t, server, &req, &timeout)
+	res := doReadRowsOp(t, server, &req, &opts)
 
 	// 4a. Check the runtime
 	curTs := time.Now()
@@ -660,7 +666,11 @@ func TestReadRows_Generic_DeadlineExceeded(t *testing.T) {
 	assert.GreaterOrEqual(t, runTimeSecs, 2)
 	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
 
-	// 4b. Check the DeadlineExceeded error
-	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
+	// 4b. Check the DeadlineExceeded error. Some clients wrap the error code in the message,
+	// so check the message if error code is not right.
+	if res.GetStatus().GetCode() != int32(codes.DeadlineExceeded) {
+		msg := res.GetStatus().GetMessage()
+		assert.Contains(t, strings.ToLower(strings.ReplaceAll(msg, " ", "")), "deadlineexceeded")
+	}
 }
 

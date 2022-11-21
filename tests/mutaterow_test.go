@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !emulator
+
 package tests
 
 import (
@@ -63,6 +65,7 @@ func dummyMutateRowRequest(tableID string, rowKey []byte, numMutations int) *btp
 // as app_profile_id in the header.
 func TestMutateRow_Generic_Headers(t *testing.T) {
 	// 0. Common variables
+	const profileID string = "test_profile"
 	const tableID string = "table"
 	tableName := buildTableName(tableID)
 
@@ -84,7 +87,10 @@ func TestMutateRow_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doMutateRowOp(t, server, &req, nil)
+	opts := clientOpts{
+		profile: profileID,
+	}
+	doMutateRowOp(t, server, &req, &opts)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -96,7 +102,7 @@ func TestMutateRow_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
-	assert.Contains(t, resource, "app_profile_id=")
+	assert.Contains(t, resource, profileID)
 }
 
 // TestMutateRow_NoRetry_NonprintableByteKey tests that client can specify non-printable byte strings as row key.
@@ -267,10 +273,10 @@ func TestMutateRow_Generic_DeadlineExceeded(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	timeout := durationpb.Duration{
-		Seconds: 2,
+	opts := clientOpts{
+		timeout: &durationpb.Duration{Seconds: 2},
 	}
-	res := doMutateRowOp(t, server, &req, &timeout)
+	res := doMutateRowOp(t, server, &req, &opts)
 	curTs := time.Now()
 
 	// 4a. Check the runtime

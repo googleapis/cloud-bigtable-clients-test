@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !emulator
+
 package tests
 
 import (
@@ -62,8 +64,9 @@ func dummyCheckAndMutateRowRequest(tableID string, rowKey []byte, predicateMatch
 func TestCheckAndMutateRow_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	const predicateMatched bool = true
-	rowKey := []byte("row-01")
+	const profileID string = "test_profile"
 	const tableID string = "table"
+	rowKey := []byte("row-01")
 	tableName := buildTableName(tableID)
 
 	// 1. Instantiate the mock server
@@ -84,7 +87,10 @@ func TestCheckAndMutateRow_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doCheckAndMutateRowOp(t, server, &req, nil)
+	opts := clientOpts{
+		profile: profileID,
+	}
+	doCheckAndMutateRowOp(t, server, &req, &opts)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -96,7 +102,7 @@ func TestCheckAndMutateRow_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
-	assert.Contains(t, resource, "app_profile_id=")
+	assert.Contains(t, resource, profileID)
 }
 
 // TestCheckAndMutateRow_NoRetry_TrueMutations tests that client can request true mutations.
@@ -127,7 +133,7 @@ func TestCheckAndMutateRow_NoRetry_TrueMutations(t *testing.T) {
 	loggedReq := <-recorder
 	assert.Equal(t, 2, len(loggedReq.req.TrueMutations))
 	assert.Empty(t, loggedReq.req.FalseMutations)
-	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
 		t.Errorf("diff found (-want +got):\n%s", diff)
 	}
 }
@@ -326,10 +332,10 @@ func TestCheckAndMutateRow_Generic_DeadlineExceeded(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	timeout := durationpb.Duration{
-		Seconds: 2,
+	opts := clientOpts{
+		timeout: &durationpb.Duration{Seconds: 2},
 	}
-	res := doCheckAndMutateRowOp(t, server, &req, &timeout)
+	res := doCheckAndMutateRowOp(t, server, &req, &opts)
 	curTs := time.Now()
 
 	// 4a. Check the runtime

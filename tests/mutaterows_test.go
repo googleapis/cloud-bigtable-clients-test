@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !emulator
+
 package tests
 
 import (
@@ -93,6 +95,7 @@ func dummyMutateRowsRequest(tableID string, numRows int) *btpb.MutateRowsRequest
 func TestMutateRows_Generic_Headers(t *testing.T) {
 	// 0. Common variables
 	const numRows int = 2
+	const profileID string = "test_profile"
 	const tableID string = "table"
 	tableName := buildTableName(tableID)
 
@@ -123,7 +126,10 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	doMutateRowsOp(t, server, &req, nil)
+	opts := clientOpts{
+		profile: profileID,
+	}
+	doMutateRowsOp(t, server, &req, &opts)
 
 	// 4. Check the request headers in the metadata
 	md := <-mdRecords
@@ -135,7 +141,7 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
         if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
-	assert.Contains(t, resource, "app_profile_id=")
+	assert.Contains(t, resource, profileID)
 }
 
 // TestMutateRows_NoRetry_NonTransientErrors tests that client will not retry on non-transient errors.
@@ -200,10 +206,10 @@ func TestMutateRows_Generic_DeadlineExceeded(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	timeout := durationpb.Duration{
-		Seconds: 2,
+	opts := clientOpts{
+		timeout: &durationpb.Duration{Seconds: 2},
 	}
-	res := doMutateRowsOp(t, server, &req, &timeout)
+	res := doMutateRowsOp(t, server, &req, &opts)
 	curTs := time.Now()
 
 	// 4a. Check the number of requests in the recorder

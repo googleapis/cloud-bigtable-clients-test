@@ -25,7 +25,6 @@ import (
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // Constants for CBT server and resources
@@ -40,19 +39,23 @@ func buildTableName(tableID string) string {
 	return fmt.Sprintf("projects/%s/instances/%s/tables/%s", projectID, instanceID, tableID)
 }
 
-// createCbtClient creates a CBT client in the test proxy. The client is given an ID `clientID`, and
-// it will target the given server `serverAddr` with custom timeout setting `timeout`. Creation
-// error will cause the test to fail immediately (e.g., client ID collision).
-func createCbtClient(t *testing.T, clientID string, serverAddr string, timeout *durationpb.Duration) {
+// createCbtClient creates a CBT client with ID `clientID` in the test proxy. The client
+// will target server at `serverAddr`. `opts` can be passed in to specify custom timeout
+// and (or) app profile. Creation error will cause the test to fail immediately (e.g.,
+// client ID collision).
+func createCbtClient(t *testing.T, clientID string, serverAddr string, opts *clientOpts) {
 	req := testproxypb.CreateClientRequest{
 		ClientId:   clientID,
 		DataTarget: serverAddr,
 		ProjectId:  projectID,
 		InstanceId: instanceID,
-		PerOperationTimeout: timeout,
 	}
-	_, err := testProxyClient.CreateClient(context.Background(), &req)
+	if opts != nil {
+		req.AppProfileId = opts.profile
+		req.PerOperationTimeout = opts.timeout
+	}
 
+	_, err := testProxyClient.CreateClient(context.Background(), &req)
 	if err != nil {
 		t.Fatalf("cbt client creation failed: %v", err)
 	}
@@ -93,9 +96,9 @@ func initMockServer(t *testing.T, serverOpt ...grpc.ServerOption) *Server {
 }
 
 // setUp starts the mock server and creates its accompanying client object.
-func setUp(t *testing.T, s *Server, clientID string, timeout *durationpb.Duration) {
+func setUp(t *testing.T, s *Server, clientID string, opts *clientOpts) {
 	s.Start()
-	createCbtClient(t, clientID, s.Addr, timeout)
+	createCbtClient(t, clientID, s.Addr, opts)
 }
 
 // tearDown stops the mock server and removes its accompanying client object.
@@ -132,25 +135,25 @@ func doReadRowOp(
 	t *testing.T,
 	s *Server,
 	req *testproxypb.ReadRowRequest,
-	timeout *durationpb.Duration) *testproxypb.RowResult {
+	opts *clientOpts) *testproxypb.RowResult {
 
-	results := doReadRowOps(t, s, []*testproxypb.ReadRowRequest{req}, timeout)
+	results := doReadRowOps(t, s, []*testproxypb.ReadRowRequest{req}, opts)
 	return results[0]
 }
 
 // doReadRowOps performs ReadRow operations in parallel, using the test proxy requests `reqs` and
-// the mock server `s`. Non-nil `timeout` will override the default setting of Cloud Bigtable
-// client. The results will be returned, where the i-th result corresponds to the i-th request.
-// nil element indicates proxy failure (not client's).
+// the mock server `s`. Non-nil `opts` will override the default client settings including app
+// profile id and timeout. The results will be returned, where the i-th result corresponds to the
+// i-th request. nil element indicates proxy failure (not client's).
 // Note that the function manages the setup and teardown of resources.
 func doReadRowOps(
 	t *testing.T,
 	s *Server,
 	reqs []*testproxypb.ReadRowRequest,
-	timeout *durationpb.Duration) []*testproxypb.RowResult {
+	opts *clientOpts) []*testproxypb.RowResult {
 
 	clientID := reqs[0].GetClientId()
-	setUp(t, s, clientID, timeout)
+	setUp(t, s, clientID, opts)
 	defer tearDown(t, s, clientID)
 
 	return doReadRowOpsCore(t, clientID, reqs, nil)
@@ -197,25 +200,25 @@ func doReadRowsOp(
 	t *testing.T,
 	s *Server,
 	req *testproxypb.ReadRowsRequest,
-	timeout *durationpb.Duration) *testproxypb.RowsResult {
+	opts *clientOpts) *testproxypb.RowsResult {
 
-	results := doReadRowsOps(t, s, []*testproxypb.ReadRowsRequest{req}, timeout)
+	results := doReadRowsOps(t, s, []*testproxypb.ReadRowsRequest{req}, opts)
 	return results[0]
 }
 
 // doReadRowsOps performs ReadRows operations in parallel, using the test proxy requests `reqs` and
-// the mock server `s`. Non-nil `timeout` will override the default setting of Cloud Bigtable
-// client. The results will be returned, where the i-th result corresponds to the i-th request.
-// nil element indicates proxy failure (not client's).
+// the mock server `s`. Non-nil `opts` will override the default client settings including app
+// profile id and timeout. The results will be returned, where the i-th result corresponds to the
+// i-th request. nil element indicates proxy failure (not client's).
 // Note that the function manages the setup and teardown of resources.
 func doReadRowsOps(
 	t *testing.T,
 	s *Server,
 	reqs []*testproxypb.ReadRowsRequest,
-	timeout *durationpb.Duration) []*testproxypb.RowsResult {
+	opts *clientOpts) []*testproxypb.RowsResult {
 
 	clientID := reqs[0].GetClientId()
-	setUp(t, s, clientID, timeout)
+	setUp(t, s, clientID, opts)
 	defer tearDown(t, s, clientID)
 
 	return doReadRowsOpsCore(t, clientID, reqs, nil)
@@ -262,25 +265,25 @@ func doMutateRowOp(
 	t *testing.T,
 	s *Server,
 	req *testproxypb.MutateRowRequest,
-	timeout *durationpb.Duration) *testproxypb.MutateRowResult {
+	opts *clientOpts) *testproxypb.MutateRowResult {
 
-	results := doMutateRowOps(t, s, []*testproxypb.MutateRowRequest{req}, timeout)
+	results := doMutateRowOps(t, s, []*testproxypb.MutateRowRequest{req}, opts)
 	return results[0]
 }
 
 // doMutateRowOps performs MutateRow operations in parallel, using the test proxy requests `reqs`
-// and the mock server `s`. Non-nil `timeout` will override the default setting of Cloud Bigtable
-// client. The results will be returned, where the i-th result corresponds to the i-th request.
-// nil element indicates proxy failure (not client's).
+// and the mock server `s`. Non-nil `opts` will override the default client settings including app
+// profile id and timeout. The results will be returned, where the i-th result corresponds to the
+// i-th request. nil element indicates proxy failure (not client's).
 // Note that the function manages the setup and teardown of resources.
 func doMutateRowOps(
 	t *testing.T,
 	s *Server,
 	reqs []*testproxypb.MutateRowRequest,
-	timeout *durationpb.Duration) []*testproxypb.MutateRowResult {
+	opts *clientOpts) []*testproxypb.MutateRowResult {
 
 	clientID := reqs[0].GetClientId()
-	setUp(t, s, clientID, timeout)
+	setUp(t, s, clientID, opts)
 	defer tearDown(t, s, clientID)
 
 	return doMutateRowOpsCore(t, clientID, reqs, nil)
@@ -327,25 +330,25 @@ func doMutateRowsOp(
 	t *testing.T,
 	s *Server,
 	req *testproxypb.MutateRowsRequest,
-	timeout *durationpb.Duration) *testproxypb.MutateRowsResult {
+	opts *clientOpts) *testproxypb.MutateRowsResult {
 
-	results := doMutateRowsOps(t, s, []*testproxypb.MutateRowsRequest{req}, timeout)
+	results := doMutateRowsOps(t, s, []*testproxypb.MutateRowsRequest{req}, opts)
 	return results[0]
 }
 
 // doMutateRowsOps performs MutateRows operations in parallel, using the test proxy requests `reqs`
-// and the mock server `s`. Non-nil `timeout` will override the default setting of Cloud Bigtable
-// client. The results will be returned, where the i-th result corresponds to the i-th request.
-// nil element indicates proxy failure (not client's).
+// and the mock server `s`. Non-nil `opts` will override the default client settings including app
+// profile id and timeout. The results will be returned, where the i-th result corresponds to the
+// i-th request. nil element indicates proxy failure (not client's).
 // Note that the function manages the setup and teardown of resources.
 func doMutateRowsOps(
 	t *testing.T,
 	s *Server,
 	reqs []*testproxypb.MutateRowsRequest,
-	timeout *durationpb.Duration) []*testproxypb.MutateRowsResult {
+	opts *clientOpts) []*testproxypb.MutateRowsResult {
 
 	clientID := reqs[0].GetClientId()
-	setUp(t, s, clientID, timeout)
+	setUp(t, s, clientID, opts)
 	defer tearDown(t, s, clientID)
 
 	return doMutateRowsOpsCore(t, clientID, reqs, nil)
@@ -392,25 +395,25 @@ func doSampleRowKeysOp(
 	t *testing.T,
 	s *Server,
 	req *testproxypb.SampleRowKeysRequest,
-	timeout *durationpb.Duration) *testproxypb.SampleRowKeysResult {
+	opts *clientOpts) *testproxypb.SampleRowKeysResult {
 
-	results := doSampleRowKeysOps(t, s, []*testproxypb.SampleRowKeysRequest{req}, timeout)
+	results := doSampleRowKeysOps(t, s, []*testproxypb.SampleRowKeysRequest{req}, opts)
 	return results[0]
 }
 
 // doSampleRowKeysOps performs SampleRowKeys operations in parallel, using the test proxy requests
-// `reqs` and the mock server `s`. Non-nil `timeout` will override the default setting of Cloud
-// Bigtable client. The results will be returned, where the i-th result corresponds to the i-th
-// request. nil element indicates proxy failure (not client's).
+// `reqs` and the mock server `s`. Non-nil `opts` will override the default client settings
+// including app profile id and timeout. The results will be returned, where the i-th result
+// corresponds to the i-th request. nil element indicates proxy failure (not client's).
 // Note that the function manages the setup and teardown of resources.
 func doSampleRowKeysOps(
 	t *testing.T,
 	s *Server,
 	reqs []*testproxypb.SampleRowKeysRequest,
-	timeout *durationpb.Duration) []*testproxypb.SampleRowKeysResult {
+	opts *clientOpts) []*testproxypb.SampleRowKeysResult {
 
 	clientID := reqs[0].GetClientId()
-	setUp(t, s, clientID, timeout)
+	setUp(t, s, clientID, opts)
 	defer tearDown(t, s, clientID)
 
 	return doSampleRowKeysOpsCore(t, clientID, reqs, nil)
@@ -457,25 +460,25 @@ func doCheckAndMutateRowOp(
 	t *testing.T,
 	s *Server,
 	req *testproxypb.CheckAndMutateRowRequest,
-	timeout *durationpb.Duration) *testproxypb.CheckAndMutateRowResult {
+	opts *clientOpts) *testproxypb.CheckAndMutateRowResult {
 
-	results := doCheckAndMutateRowOps(t, s, []*testproxypb.CheckAndMutateRowRequest{req}, timeout)
+	results := doCheckAndMutateRowOps(t, s, []*testproxypb.CheckAndMutateRowRequest{req}, opts)
 	return results[0]
 }
 
 // doCheckAndMutateRowOps performs CheckAndMutateRow operations in parallel, using the test proxy
-// requests `reqs` and the mock server `s`. Non-nil `timeout` will override the default setting of
-// Cloud Bigtable client. The results will be returned, where the i-th result corresponds to the
-// i-th request. nil element indicates proxy failure (not client's).
+// requests `reqs` and the mock server `s`. Non-nil `opts` will override the default client settings
+// including app profile id and timeout. The results will be returned, where the i-th result
+// corresponds to the i-th request. nil element indicates proxy failure (not client's).
 // Note that the function manages the setup and teardown of resources.
 func doCheckAndMutateRowOps(
 	t *testing.T,
 	s *Server,
 	reqs []*testproxypb.CheckAndMutateRowRequest,
-	timeout *durationpb.Duration) []*testproxypb.CheckAndMutateRowResult {
+	opts *clientOpts) []*testproxypb.CheckAndMutateRowResult {
 
 	clientID := reqs[0].GetClientId()
-	setUp(t, s, clientID, timeout)
+	setUp(t, s, clientID, opts)
 	defer tearDown(t, s, clientID)
 
 	return doCheckAndMutateRowOpsCore(t, clientID, reqs, nil)
@@ -522,25 +525,25 @@ func doReadModifyWriteRowOp(
 	t *testing.T,
 	s *Server,
 	req *testproxypb.ReadModifyWriteRowRequest,
-	timeout *durationpb.Duration) *testproxypb.RowResult {
+	opts *clientOpts) *testproxypb.RowResult {
 
-	results := doReadModifyWriteRowOps(t, s, []*testproxypb.ReadModifyWriteRowRequest{req}, timeout)
+	results := doReadModifyWriteRowOps(t, s, []*testproxypb.ReadModifyWriteRowRequest{req}, opts)
 	return results[0]
 }
 
 // doReadModifyWriteRowOps performs ReadModifyWriteRow operations in parallel, using the test proxy
-// requests `reqs` and the mock server `s`. Non-nil `timeout` will override the default setting of
-// Cloud Bigtable client. The results will be returned, where the i-th result corresponds to the
-// i-th request. nil element indicates proxy failure (not client's).
+// requests `reqs` and the mock server `s`. Non-nil `opts` will override the default client settings
+// including app profile id and timeout. The results will be returned, where the i-th result
+// corresponds to the i-th request. nil element indicates proxy failure (not client's).
 // Note that the function manages the setup and teardown of resources.
 func doReadModifyWriteRowOps(
 	t *testing.T,
 	s *Server,
 	reqs []*testproxypb.ReadModifyWriteRowRequest,
-	timeout *durationpb.Duration) []*testproxypb.RowResult {
+	opts *clientOpts) []*testproxypb.RowResult {
 
 	clientID := reqs[0].GetClientId()
-	setUp(t, s, clientID, timeout)
+	setUp(t, s, clientID, opts)
 	defer tearDown(t, s, clientID)
 
 	return doReadModifyWriteRowOpsCore(t, clientID, reqs, nil)
