@@ -53,13 +53,18 @@ Assuming you have built the proxy binary already, then you can do the following:
 1. Bring up the test proxy with an unused port. Java example:
 
    ```sh
-   $ java -Dport=9999 -jar <path to proxy binary>
+   $ mvn exec:java -Dexec.mainClass=com.google.cloud.bigtable.testproxy.CbtTestProxyMain -Dport=9999
    ```
 1. Change directory to the folder [*tests*](tests/),
    and do
 
    ```sh
    $ go test -v -proxy_addr=:9999
+   ```
+   To run tests that use a local Bigtable emulator, the command is
+
+   ```sh
+   $ go test -v --tags=emulator -proxy_addr=:9999
    ```
 
 ### Advanced usage
@@ -95,7 +100,7 @@ In addition, you can use logging to uncover less obvious problems. The subsectio
 
 You can use `t.Logf()` to print out the variables you care about. For example, to check the response of test proxy, you can do
 
-```golang
+```go
 t.Logf("Response of test proxy: %+v", res)
 ```
 

@@ -44,7 +44,9 @@ type CreateClientRequest struct {
 
 	ClientId string `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	// The "host:port" address of the data API endpoint (i.e. the backend being
-	// proxied to). Example: 127.0.0.1:38543
+	// proxied to). Example: 127.0.0.1:38543. If you want to connect to a local
+	// emulator via BIGTABLE_EMULATOR_HOST environment variable, you can use
+	// "emulator" instead of "host:port" for this field.
 	DataTarget string `protobuf:"bytes,2,opt,name=data_target,json=dataTarget,proto3" json:"data_target,omitempty"`
 	// The project for all calls on this client.
 	ProjectId string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`

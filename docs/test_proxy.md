@@ -11,7 +11,8 @@ The purpose of test proxies is to allow tests to be executed across different cl
 
 First, please familiarize yourself with building a gRPC server in your selected
 language ([Guidance](https://grpc.io/docs/languages/)). For examples of
-successfully implemented proxies, see the Java proxy (coming soon),
+successfully implemented proxies, see the
+[Java proxy](https://github.com/googleapis/java-bigtable/tree/main/test-proxy),
 [Go proxy](https://github.com/googleapis/google-cloud-go/tree/main/bigtable/internal/testproxy),
 and the
 [C++ proxy](https://github.com/dbolduc/google-cloud-cpp/tree/cbt-test-proxy-dev-flattened/google/cloud/bigtable/cbt_test_proxy).
@@ -32,8 +33,7 @@ clients may only support one mode. If your client supports both modes, you can
 build two separate test proxy binaries, and test both modes. In implementing the
 data methods, you may need to convert between the raw proto message and the data
 type of your client library (the latter is generally eaiser to work with in
-your specific client language). Such overhead is a downside of introducing the
-test proxy.
+your client language). Such overhead is a downside of using the test proxy.
 
 Third, you should also implement a **`main`** function to bring up the proxy
 server and add a command line parameter to allow specifying a valid port number
