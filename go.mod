@@ -9,7 +9,7 @@ require (
 	github.com/stretchr/testify v1.8.1
 	google.golang.org/api v0.105.0
 	google.golang.org/genproto v0.0.0-20230125152338-dcaf20b6aeaa
-	google.golang.org/grpc v1.51.0
+	google.golang.org/grpc v1.52.3
 	google.golang.org/protobuf v1.28.1
 )
 
@@ -33,9 +33,9 @@ require (
 	github.com/googleapis/gax-go/v2 v2.7.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/net v0.1.0 // indirect
+	golang.org/x/net v0.4.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783 // indirect
-	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/text v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
