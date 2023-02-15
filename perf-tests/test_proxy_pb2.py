@@ -12,8 +12,8 @@ _sym_db = _symbol_database.Default()
 
 
 from google.api import client_pb2 as google_dot_api_dot_client__pb2
-from google.bigtable.v2 import bigtable_pb2 as google_dot_bigtable_dot_v2_dot_bigtable__pb2
-from google.bigtable.v2 import data_pb2 as google_dot_bigtable_dot_v2_dot_data__pb2
+import bigtable_pb2 as google_dot_bigtable_dot_v2_dot_bigtable__pb2
+import data_pb2 as google_dot_bigtable_dot_v2_dot_data__pb2
 from google.protobuf import duration_pb2 as google_dot_protobuf_dot_duration__pb2
 from google.rpc import status_pb2 as google_dot_rpc_dot_status__pb2
 
