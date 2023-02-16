@@ -273,8 +273,7 @@ class CloudBigtableV2TestProxy(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        # return grpc.experimental.unary_unary(request, target, '/google.bigtable.testproxy.CloudBigtableV2TestProxy/CreateClient',
-        return grpc.experimental.unary_unary(request, target, '/bigtable.client.test.CloudBigtableV2TestProxy/CreateClient',
+        return grpc.experimental.unary_unary(request, target, '/google.bigtable.testproxy.CloudBigtableV2TestProxy/CreateClient',
             test__proxy__pb2.CreateClientRequest.SerializeToString,
             test__proxy__pb2.CreateClientResponse.FromString,
             options, channel_credentials,
