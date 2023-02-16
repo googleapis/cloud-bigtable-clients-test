@@ -325,11 +325,10 @@ func TestMutateRows_RetryClientGap_ExponentialBackoff(t *testing.T) {
 	}
 
 	// 3. Perform the operation via test proxy
-	res := doMutateRowsOp(t, server, &req, nil)
+	doMutateRowsOp(t, server, &req, nil)
 
 	// 4a. Check the number of requests in the recorder
 	assert.Equal(t, numRPCs, len(recorder))
-	return
 
 	// 4b. Check the retry delays
 	origReq := <-recorder
