@@ -19,9 +19,13 @@ def create_client(client_id, server_addr="localhost:9999", project_id="project",
     response = proxy_client.CreateClient(request, server_addr, insecure=True)
     return response
 
-def read_row():
-    pass
+def read_rows(server_addr="localhost:9999"):
+    bt_request = bigtable_pb2.ReadRowsRequest(table_name="table", rows_limit=5)
+    request = test_proxy_pb2.ReadRowsRequest(client_id="test", request=bt_request)
+    proxy_client = proxy_grpc.CloudBigtableV2TestProxy()
+    response = proxy_client.ReadRows(request, server_addr, insecure=True)
+    return response
 
 if __name__ == "__main__":
-    c = create_client("sanche")
-    print(c)
+    r = read_rows()
+    print(r)
