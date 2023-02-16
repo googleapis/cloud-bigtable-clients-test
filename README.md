@@ -53,7 +53,7 @@ Assuming you have built the proxy binary already, then you can do the following:
 1. Bring up the test proxy with an unused port. Java example:
 
    ```sh
-   $ mvn exec:java -Dexec.mainClass=com.google.cloud.bigtable.testproxy.CbtTestProxyMain -Dport=9999
+   $ java -jar target/google-cloud-bigtable-test-proxy-0.0.1-SNAPSHOT.jar
    ```
 1. Change directory to the folder [*tests*](tests/),
    and do

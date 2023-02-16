@@ -14,11 +14,12 @@ language ([Guidance](https://grpc.io/docs/languages/)). For examples of
 successfully implemented proxies, see the
 [Java proxy](https://github.com/googleapis/java-bigtable/tree/main/test-proxy),
 [Go proxy](https://github.com/googleapis/google-cloud-go/tree/main/bigtable/internal/testproxy),
+[Node.js proxy](https://github.com/googleapis/nodejs-bigtable/tree/main/testproxy),
 and the
 [C++ proxy](https://github.com/dbolduc/google-cloud-cpp/tree/cbt-test-proxy-dev-flattened/google/cloud/bigtable/cbt_test_proxy).
 
 Second, you need to implement each individual method in the proxy
-([Proto definition](https://github.com/googleapis/cloud-bigtable-clients-test/blob/main/testproxypb/v2_test_proxy.proto)):
+([Proto definition](https://github.com/googleapis/cndb-client-testing-protos/blob/main/google/bigtable/testproxy/test_proxy.proto)):
 
 *   `CreateClient()`, `CloseClient()`, `RemoveClient()` -> Please check
     [additional notes](#additional-notes)
