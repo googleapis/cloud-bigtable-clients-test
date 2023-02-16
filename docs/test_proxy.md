@@ -19,10 +19,10 @@ and the
 [C++ proxy](https://github.com/dbolduc/google-cloud-cpp/tree/cbt-test-proxy-dev-flattened/google/cloud/bigtable/cbt_test_proxy).
 
 Second, you need to implement each individual method in the proxy
-([Proto definition](https://github.com/googleapis/cndb-client-testing-protos/blob/main/google/bigtable/testproxy/test_proxy.proto)):
+([Proto definition](https://github.com/googleapis/cndb-client-testing-protos/blob/main/google/bigtable/testproxy/test_proxy.proto),
+[additional notes](#additional-notes)):
 
-*   `CreateClient()`, `CloseClient()`, `RemoveClient()` -> Please check
-    [additional notes](#additional-notes)
+*   `CreateClient()`, `CloseClient()`, `RemoveClient()`
 *   `ReadRow()`, `ReadRows()`
 *   `MutateRow()`, `BulkMutateRows()`
 *   `CheckAndMutateRow()`
@@ -81,13 +81,13 @@ are:
     the proxy user can no longer see the object. `RemoveClient()` should be
     called after `CloseClient()`.
 
-The `status` field of response messages:
+About the `status` field in data operation's response:
 
 *   It should always represents an error returned by the client library. In other
-    words, problems in either the proxy logic or test <-> proxy communication
+    words, problems in either the proxy logic or test <--> proxy communication
     shouldn't appear in this field.
 
-*   The response of BulkMutateRows also contain per-mutation status. Test proxy
+*   The response of BulkMutateRows also contains per-mutation status. Test proxy
     should disambiguate between RPC failure and individual entry failure, and
     set MutateRowsResult.status according to the overall RPC status. For test cases
     that are focused on per-mutation failures, we will only check the per-mutation
