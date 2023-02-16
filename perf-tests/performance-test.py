@@ -25,11 +25,6 @@ def create_client(client_id, server_addr, proxy_addr, project_id="project", inst
     response = proxy_client.CreateClient(request, proxy_addr, insecure=True)
     return response
 
-def read_rows(client_id, proxy_addr, request):
-    proxy_client = proxy_grpc.CloudBigtableV2TestProxy()
-    response = proxy_client.ReadRows(request, proxy_addr, insecure=True)
-    return response
-
 class MockBigtableServicer(bigtable_pb2_grpc.BigtableServicer):
 
     def __init__(self, serve_fn):
@@ -54,11 +49,11 @@ if __name__ == "__main__":
 
     client_id = "test_client"
 
-    benchmark_request, benchmark_serve_fn = benchmark.simple_reads(client_id)
+    benchmark_request, benchmark_serve_fn = benchmark.simple_reads(client_id, proxy_addr)
 
     server = serve(server_addr=server_addr, serve_fn=benchmark_serve_fn)
     c = create_client(client_id, server_addr=server_addr, proxy_addr=proxy_addr)
 
-    r = read_rows(client_id, proxy_addr, benchmark_request)
-    print(f"Status: {r.status}\nRows: {len(r.row)}")
+    time = benchmark_request()
+    print(time)
     # server.wait_for_termination()
