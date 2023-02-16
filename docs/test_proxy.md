@@ -79,3 +79,15 @@ are:
 *   `RemoveClient()` removes the client object from the map/hash/dict, so that
     the proxy user can no longer see the object. `RemoveClient()` should be
     called after `CloseClient()`.
+
+The `status` field of response messages:
+
+*   It should always represents an error returned by the client library. In other
+    words, problems in either the proxy logic or test <-> proxy communication
+    shouldn't appear in this field.
+
+*   The response of BulkMutateRows also contain per-mutation status. Test proxy
+    should disambiguate between RPC failure and individual entry failure, and
+    set MutateRowsResult.status according to the overall RPC status. For test cases
+    that are focused on per-mutation failures, we will only check the per-mutation
+    status (as different clients may exhibit different overall statuses).
