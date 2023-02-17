@@ -226,7 +226,6 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 	// 4b. Verify that client sent the retry request properly
 	loggedReq := <-recorder
 	loggedRetry := <-recorder
-	assert.Empty(t, loggedReq.req.GetRows().GetRowRanges())
 	if len(loggedReq.req.GetRows().GetRowRanges()) > 0 {
 		// Some clients such as Node.js may add an empty row range to the row range list.
 		assert.Equal(t, 1, len(loggedReq.req.GetRows().GetRowRanges()))
