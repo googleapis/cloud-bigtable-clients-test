@@ -227,6 +227,11 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 	loggedReq := <-recorder
 	loggedRetry := <-recorder
 	assert.Empty(t, loggedReq.req.GetRows().GetRowRanges())
+	if len(loggedReq.req.GetRows().GetRowRanges()) > 0 {
+		// Some clients such as Node.js may add an empty row range to the row range list.
+		assert.Equal(t, 1, len(loggedReq.req.GetRows().GetRowRanges()))
+		assert.Empty(t, loggedReq.req.GetRows().GetRowRanges()[0])
+	}
 	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("qfoo")}))
 }
 
