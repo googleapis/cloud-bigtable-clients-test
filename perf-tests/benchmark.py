@@ -6,7 +6,7 @@ from bigtable_pb2 import ReadRowsResponse, ReadRowsRequest
 from google.protobuf.wrappers_pb2 import StringValue, BytesValue
 from time import sleep
 
-def simple_reads(client_id, proxy_addr, num_rows=1e7, payload_size=10, chunks_per_response=100, server_latency=0):
+def simple_reads(client_id, proxy_addr, num_rows=1e5, payload_size=10, chunks_per_response=100, server_latency=0):
     """
     A large number of simple row reads
     should test max throughput of read_rows
@@ -36,10 +36,9 @@ def simple_reads(client_id, proxy_addr, num_rows=1e7, payload_size=10, chunks_pe
         request = test_proxy_pb2.ReadRowsRequest(client_id=client_id, request=bt_request)
         proxy_client = proxy_grpc.CloudBigtableV2TestProxy()
 
-        starting_time = timeit.default_timer()
         grpc_options = (('grpc.max_receive_message_length', -1),)
+        starting_time = timeit.default_timer()
         response = proxy_client.ReadRows(request, proxy_addr, options=grpc_options, insecure=True)
-        print(f"Status: {response.status}\nRows: {len(response.row)}")
         diff = timeit.default_timer() - starting_time
         return diff
 
