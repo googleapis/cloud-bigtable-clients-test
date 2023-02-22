@@ -149,9 +149,9 @@ func TestSampleRowKeys_Generic_MultiStreams(t *testing.T) {
 	checkRequestsAreWithin(t, 1000, recorder)
 }
 
-// TestSampleRowKeys_GenericClientGap_CloseClient tests that client doesn't kill inflight requests after
+// TestSampleRowKeys_Generic_CloseClient tests that client doesn't kill inflight requests after
 // client closing, but will reject new requests.
-func TestSampleRowKeys_GenericClientGap_CloseClient(t *testing.T) {
+func TestSampleRowKeys_Generic_CloseClient(t *testing.T) {
 	// 0. Common variable
 	halfBatchSize := 3
 	clientID := t.Name()

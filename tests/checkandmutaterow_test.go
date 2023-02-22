@@ -244,9 +244,9 @@ func TestCheckAndMutateRow_NoRetry_TransientError(t *testing.T) {
 	assert.Equal(t, 1, len(records))
 }
 
-// TestCheckAndMutateRow_GenericClientGap_CloseClient tests that client doesn't kill inflight
+// TestCheckAndMutateRow_Generic_CloseClient tests that client doesn't kill inflight
 // requests after client closing, but will reject new requests.
-func TestCheckAndMutateRow_GenericClientGap_CloseClient(t *testing.T) {
+func TestCheckAndMutateRow_Generic_CloseClient(t *testing.T) {
 	// 0. Common variable
 	predicateMatched := []bool{false, true, true, false, false, true}
 	rowKeys := []string{"op0-row", "op1-row", "op2-row", "op3-row", "op4-row", "op5-row"}

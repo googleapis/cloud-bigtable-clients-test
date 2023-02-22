@@ -201,9 +201,9 @@ func TestMutateRow_Generic_MultiStreams(t *testing.T) {
 	checkRequestsAreWithin(t, 1000, recorder)
 }
 
-// TestMutateRow_GenericClientGap_CloseClient tests that client doesn't kill inflight requests
+// TestMutateRow_Generic_CloseClient tests that client doesn't kill inflight requests
 // after client closing, but will reject new requests.
-func TestMutateRow_GenericClientGap_CloseClient(t *testing.T) {
+func TestMutateRow_Generic_CloseClient(t *testing.T) {
 	// 0. Common variable
 	rowKeys := []string{"op0-row", "op1-row", "op2-row", "op3-row", "op4-row", "op5-row"}
 	halfBatchSize := len(rowKeys) / 2

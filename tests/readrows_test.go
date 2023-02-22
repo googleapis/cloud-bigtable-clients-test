@@ -552,9 +552,9 @@ func TestReadRows_NoRetry_OpenEndUnspecifiedStart(t *testing.T) {
 	assert.Len(t, res.Row, 1)
 }
 
-// TestReadRows_GenericClientGap_CloseClient tests that client doesn't kill inflight requests after
+// TestReadRows_Generic_CloseClient tests that client doesn't kill inflight requests after
 // client closing, but will reject new requests.
-func TestReadRows_GenericClientGap_CloseClient(t *testing.T) {
+func TestReadRows_Generic_CloseClient(t *testing.T) {
 	// 0. Common variable
 	rowKeys := [][]string{
 		[]string{"op0-row-a", "op0-row-b"},

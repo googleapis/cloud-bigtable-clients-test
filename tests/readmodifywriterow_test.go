@@ -271,9 +271,9 @@ func TestReadModifyWriteRow_NoRetry_TransientError(t *testing.T) {
 	assert.Equal(t, 1, len(records))
 }
 
-// TestReadModifyWriteRow_GenericClientGap_CloseClient tests that client doesn't kill inflight requests
+// TestReadModifyWriteRow_Generic_CloseClient tests that client doesn't kill inflight requests
 // after client closing, but will reject new requests.
-func TestReadModifyWriteRow_GenericClientGap_CloseClient(t *testing.T) {
+func TestReadModifyWriteRow_Generic_CloseClient(t *testing.T) {
 	// 0. Common variable
 	increments := []int64{10, 2}
 	appends := []string{"append"}

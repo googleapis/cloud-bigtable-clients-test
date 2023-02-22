@@ -69,21 +69,24 @@ Assuming you have built the proxy binary already, then you can do the following:
 
 ### Advanced usage
 
-You may want to skip some test cases which are not yet applicable to your client library.
-As Golang only allows us to select the test cases to run, we provide a
-[naming convention](docs/test_case_naming.md) to facilitate test skipping.
-Update: `-skip` will be supported
-([feature request](https://github.com/golang/go/issues/41583)).
+You may want to run/skip a subset of test cases. As of
+[Go 1.20](https://tip.golang.org/doc/go1.20), we can achieve the goal with a
+well-designed [naming convention](docs/test_case_naming.md).
 
 The command is
 
 ```sh
 $ go test -v -run <test name regex> -proxy_addr=:9999
 ```
+or
 
-In the above command, `<test name regex>` will select the test cases that have partially matching names.
+```sh
+$ go test -v -skip <test name regex> -proxy_addr=:9999
+```
+
+In the above command, `<test name regex>` will try to match a substring of each test name.
 For more information, please refer to the [online doc](https://pkg.go.dev/cmd/go/internal/test).
-Here are some useful examples:
+Here are some simple examples:
 
 * `TestReadRows_` selects all the test cases exercising “ReadRows”.
 * `TestReadRows_Retry_` selects all the test cases exercising the “Retry” behaviors of “ReadRows”.

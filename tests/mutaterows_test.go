@@ -288,9 +288,8 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 	}
 }
 
-// TestMutateRows_RetryClientGap_ExponentialBackoff tests that client will retry using exponential backoff.
-// Not all client libraries satisfy the requirement, so "ClientGap" is added to the name.
-func TestMutateRows_RetryClientGap_ExponentialBackoff(t *testing.T) {
+// TestMutateRows_Retry_ExponentialBackoff tests that client will retry using exponential backoff.
+func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
 	// 0. Common variables
 	const numRows int = 1
 	const numRPCs int = 4
@@ -398,9 +397,9 @@ func TestMutateRows_Generic_MultiStreams(t *testing.T) {
 	checkRequestsAreWithin(t, 1000, recorder)
 }
 
-// TestMutateRows_GenericClientGap_CloseClient tests that client doesn't kill inflight requests after
+// TestMutateRows_Generic_CloseClient tests that client doesn't kill inflight requests after
 // client closing, but will reject new requests.
-func TestMutateRows_GenericClientGap_CloseClient(t *testing.T) {
+func TestMutateRows_Generic_CloseClient(t *testing.T) {
 	// 0. Common variable
 	rowKeys := [][]string{
 		[]string{"op0-row-a", "op0-row-b"},
