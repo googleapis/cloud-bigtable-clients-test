@@ -17,7 +17,9 @@ import logging
 from multiprocessing import Process
 import multiprocessing
 import time
-
+from google.protobuf import json_format
+import json
+import inspect
 
 def proxy_server_process(q):
     from concurrent import futures
@@ -45,7 +47,9 @@ def proxy_server_process(q):
 
         def ReadRows(self, request, context):
             # print(f"read rows: {request.client_id=} {request.request=}" )
-            q.put(request.request.SerializeToString())
+            json_dict = json_format.MessageToDict(request)
+            json_dict["proxy_request"] = inspect.currentframe().f_code.co_name
+            q.put(json_dict)
             return test_proxy_pb2.RowsResult()
 
         def MutateRow(self, request, context):
@@ -68,18 +72,21 @@ def proxy_server_process(q):
 def client_process(q):
     import google.cloud.bigtable_v2 as bigtable_v2
     print("listening")
+    client = bigtable_v2.BigtableClient()
     while True:
         if not q.empty():
             print("got something")
-            data = q.get()
-            request = bigtable_v2.ReadRowsRequest.deserialize(data)
-            print(request)
+            json_data = q.get()
+            print(json_data)
+            # request = json_format.ParseDict(json_data["request"], bigtable_v2.ReadRowsRequest())
+            # print(request)
         else:
             print("nothing")
             time.sleep(1)
 
 if __name__ == '__main__':
     q = multiprocessing.Queue()
+    # proxy_server_process(q)
     logging.basicConfig()
     proxy = Process(target=proxy_server_process, args=(q,))
     proxy.start()
