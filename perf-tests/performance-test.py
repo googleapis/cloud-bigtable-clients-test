@@ -56,7 +56,7 @@ def repeat_benchmark(benchmark_fn, times=100):
 
 
 if __name__ == "__main__":
-    proxy_addr = "localhost:9999"
+    proxy_addr = "localhost:50055"
     server_addr = "localhost:8888"
 
     client_id = "test_client"
