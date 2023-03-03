@@ -29,28 +29,20 @@ def proxy_server_process(request_q, queue_pool):
     import test_proxy_pb2
     import test_proxy_pb2_grpc
 
-    # from proxy_server_2 import CreateClient as proxy_client
 
 
 
     class TestProxyServer(test_proxy_pb2_grpc.CloudBigtableV2TestProxyServicer):
 
         def __init__(self, queue_pool):
-            self.in_use = set()
+            self.open_queues = list(range(len(queue_pool)))
             self.queue_pool = queue_pool
 
-        def get_queue_idx(self):
-            idx = None
-            while idx in self.in_use or idx is None:
-                idx = random.randint(0,len(queue_pool)-1)
-            self.in_use.add(idx)
-            return idx
-
         def defer_to_client(func, timeout_seconds=10):
-            def wrapper(obj, request, context, **kwargs):
+            def wrapper(self, request, context, **kwargs):
                 deadline = time.time() + timeout_seconds
                 json_dict = json_format.MessageToDict(request)
-                out_idx = obj.get_queue_idx()
+                out_idx = self.open_queues.pop()
                 json_dict["proxy_request"] = func.__name__
                 json_dict["response_queue_idx"] = out_idx
                 out_q = queue_pool[out_idx]
@@ -59,9 +51,9 @@ def proxy_server_process(request_q, queue_pool):
                 while time.time() < deadline:
                     if not out_q.empty():
                         response = out_q.get()
-                        obj.in_use.remove(out_idx)
+                        self.open_queues.append(out_idx)
                         print(f"{func.__name__} client response: {response=}")
-                        return func(obj, request, context, **kwargs, response=response)
+                        return func(self, request, context, **kwargs, response=response)
                     else:
                         time.sleep(0.1)
             return wrapper
