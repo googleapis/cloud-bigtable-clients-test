@@ -42,6 +42,10 @@ def grpc_server_process(request_q, queue_pool):
             self.queue_pool = queue_pool
 
         def defer_to_client(func, timeout_seconds=10):
+            """
+            Decorator that transparently passes a request to the client
+            handler process, and then attaches the resonse to the wrapped call
+            """
             def wrapper(self, request, context, **kwargs):
                 deadline = time.time() + timeout_seconds
                 json_dict = json_format.MessageToDict(request)
@@ -55,8 +59,10 @@ def grpc_server_process(request_q, queue_pool):
                     if not out_q.empty():
                         response = out_q.get()
                         self.open_queues.append(out_idx)
-                        # print(f"{func.__name__} client response: {response=}")
-                        return func(self, request, context, **kwargs, response=response)
+                        if isinstance(response, Exception):
+                            raise response
+                        else:
+                            return func(self, request, context, **kwargs, response=response)
             return wrapper
 
         @defer_to_client
@@ -120,13 +126,26 @@ def client_handler_process(request_q, queue_pool):
             self.app_profile_id = app_profile_id
             self.per_operation_timeout = per_operation_timeout
 
+        def error_safe(func):
+            """
+            Catch and pass errors back to the grpc_server_process
+            Also check for closed client before processing requests
+            """
+            def wrapper(self, *args, **kwargs):
+                try:
+                    if self.closed:
+                        raise RuntimeError("client is closed")
+                    return func(self, *args, **kwargs)
+                except Exception as e:
+                    # exceptions should be raised in grpc_server_process
+                    return e
+            return wrapper
 
         def close(self):
             self.closed = True
 
+        @error_safe
         def ReadRows(self, request, **kwargs):
-            if self.closed:
-                raise RuntimeError("client is closed")
             response = list(self.client.read_rows(request))
             serialized_response = [str(r) for r in response]
             return serialized_response
@@ -166,12 +185,12 @@ def client_handler_process(request_q, queue_pool):
 
 if __name__ == '__main__':
     # start and run both processes
-    queue_pool = [multiprocessing.Queue() for _ in range(100)]
+    response_queue_pool = [multiprocessing.Queue() for _ in range(100)] # larger pools support more concurrent requests
     request_q = multiprocessing.Queue()
     logging.basicConfig()
-    proxy = Process(target=grpc_server_process, args=(request_q, queue_pool,))
+    proxy = Process(target=grpc_server_process, args=(request_q, response_queue_pool,))
     proxy.start()
-    client = Process(target=client_handler_process, args=(request_q, queue_pool,))
+    client = Process(target=client_handler_process, args=(request_q, response_queue_pool,))
     client.start()
     proxy.join()
     client.join()
