@@ -22,15 +22,16 @@ import inspect
 from collections import namedtuple
 import random
 
-def proxy_server_process(request_q, queue_pool):
+def grpc_server_process(request_q, queue_pool):
+    """
+    Defines a process that hosts a grpc server
+    proxies requests to a client_handler_process
+    """
     from concurrent import futures
 
     import grpc
     import test_proxy_pb2
     import test_proxy_pb2_grpc
-
-
-
 
     class TestProxyServer(test_proxy_pb2_grpc.CloudBigtableV2TestProxyServicer):
 
@@ -83,19 +84,21 @@ def proxy_server_process(request_q, queue_pool):
             print(f"mutate rows: {request.client_id=} {request.request=}" )
             return test_proxy_pb2.MutateRowResult()
 
-
-
+    # Start gRPC server
     port = '50055'
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     test_proxy_pb2_grpc.add_CloudBigtableV2TestProxyServicer_to_server(TestProxyServer(queue_pool), server)
     server.add_insecure_port('[::]:' + port)
     server.start()
-    print("Server started, listening on " + port)
+    print("grpc_server_process started, listening on " + port)
     server.wait_for_termination()
 
-def client_process(request_q, queue_pool):
+def client_handler_process(request_q, queue_pool):
+    """
+    Defines a process that recives Bigtable requests from a grpc_server_process,
+    and runs the request using a client library instance
+    """
     import google.cloud.bigtable_v2 as bigtable_v2
-    print("listening")
 
     class TestProxyHandler():
         def __init__(self):
@@ -110,6 +113,8 @@ def client_process(request_q, queue_pool):
                 raise RuntimeError("client is closed")
             return {"status": "ok"}
 
+    # Listen to requests from grpc server process
+    print("client_handler_process started")
     client_map = {}
     while True:
         if not request_q.empty():
@@ -119,6 +124,7 @@ def client_process(request_q, queue_pool):
             out_q = queue_pool[json_data.pop("response_queue_idx")]
             client_id = json_data.get("clientId", None)
             client = client_map.get(client_id, None)
+            # handle special cases for client creation and deletion
             if fn_name == "CreateClient":
                 client = TestProxyHandler()
                 client_map[client_id] = client
@@ -139,13 +145,13 @@ def client_process(request_q, queue_pool):
         time.sleep(0.1)
 
 if __name__ == '__main__':
+    # start and run both processes
     queue_pool = [multiprocessing.Queue() for _ in range(100)]
     request_q = multiprocessing.Queue()
-    # proxy_server_process(queue_map)
     logging.basicConfig()
-    proxy = Process(target=proxy_server_process, args=(request_q, queue_pool,))
+    proxy = Process(target=grpc_server_process, args=(request_q, queue_pool,))
     proxy.start()
-    client = Process(target=client_process, args=(request_q, queue_pool,))
+    client = Process(target=client_handler_process, args=(request_q, queue_pool,))
     client.start()
     proxy.join()
     client.join()
