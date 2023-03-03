@@ -51,7 +51,7 @@ def grpc_server_process(request_q, queue_pool):
             self.open_queues = list(range(len(queue_pool)))
             self.queue_pool = queue_pool
 
-        def defer_to_client(func, timeout_seconds=10):
+        def delegate_to_client_handler(func, timeout_seconds=300):
             """
             Decorator that transparently passes a request to the client
             handler process, and then attaches the resonse to the wrapped call
@@ -76,20 +76,20 @@ def grpc_server_process(request_q, queue_pool):
                     time.sleep(1e-4)
             return wrapper
 
-        @defer_to_client
+        @delegate_to_client_handler
         def CreateClient(self, request, context, client_response=None):
             return test_proxy_pb2.CreateClientResponse()
 
-        @defer_to_client
+        @delegate_to_client_handler
         def CloseClient(self, request, context, client_response=None):
             return test_proxy_pb2.CloseClientResponse()
 
-        @defer_to_client
+        @delegate_to_client_handler
         def RemoveClient(self, request, context, client_response=None):
             print(request)
             return test_proxy_pb2.RemoveClientResponse()
 
-        @defer_to_client
+        @delegate_to_client_handler
         def ReadRows(self, request, context, client_response=None):
             print(f"read rows: num chunks: {len(client_response)}" )
             return test_proxy_pb2.RowsResult()
