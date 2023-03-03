@@ -18,10 +18,10 @@ from multiprocessing import Process
 import multiprocessing
 import time
 from google.protobuf import json_format
-import json
 import inspect
+from collections import namedtuple
 
-def proxy_server_process(q):
+def proxy_server_process(queue_map):
     from concurrent import futures
 
     import grpc
@@ -48,9 +48,17 @@ def proxy_server_process(q):
         def ReadRows(self, request, context):
             # print(f"read rows: {request.client_id=} {request.request=}" )
             json_dict = json_format.MessageToDict(request)
-            json_dict["proxy_request"] = inspect.currentframe().f_code.co_name
-            q.put(json_dict)
-            return test_proxy_pb2.RowsResult()
+            fn_name = inspect.currentframe().f_code.co_name
+            json_dict["proxy_request"] = fn_name
+            (in_q, out_q) = queue_map[fn_name]
+            in_q.put(json_dict)
+            while True:
+                if not out_q.empty():
+                    response = out_q.get()
+                    print(f"read rows response: {response=}")
+                    return test_proxy_pb2.RowsResult()
+                else:
+                    time.sleep(0.1)
 
         def MutateRow(self, request, context):
             print(f"mutate rows: {request.client_id=} {request.request=}" )
@@ -69,28 +77,38 @@ def proxy_server_process(q):
     print("Server started, listening on " + port)
     server.wait_for_termination()
 
-def client_process(q):
+def client_process(queue_map):
     import google.cloud.bigtable_v2 as bigtable_v2
     print("listening")
     client = bigtable_v2.BigtableClient()
+
+    class TestProxyHandler():
+
+        def ReadRows(self, request_dict):
+            return {"status": "ok"}
+
+    handler = TestProxyHandler()
+    in_queues = [queue.in_q for queue in queue_map.values()]
     while True:
-        if not q.empty():
-            print("got something")
-            json_data = q.get()
-            print(json_data)
-            # request = json_format.ParseDict(json_data["request"], bigtable_v2.ReadRowsRequest())
-            # print(request)
-        else:
-            print("nothing")
-            time.sleep(1)
+        for q in in_queues:
+            if not q.empty():
+                json_data = q.get()
+                # print(json_data)
+                fn = getattr(handler, json_data["proxy_request"])
+                result = fn(json_data)
+                (_, out_q) = queue_map[json_data["proxy_request"]]
+                out_q.put(result)
+        time.sleep(0.1)
 
 if __name__ == '__main__':
-    q = multiprocessing.Queue()
-    # proxy_server_process(q)
+    rpc_names = ["ReadRows"]
+    RpcQueues = namedtuple("RpcQueues", ["in_q", "out_q"])
+    queue_map = {name: RpcQueues(multiprocessing.Queue(), multiprocessing.Queue()) for name in rpc_names}
+    # proxy_server_process(queue_map)
     logging.basicConfig()
-    proxy = Process(target=proxy_server_process, args=(q,))
+    proxy = Process(target=proxy_server_process, args=(queue_map,))
     proxy.start()
-    client = Process(target=client_process, args=(q,))
+    client = Process(target=client_process, args=(queue_map,))
     client.start()
     proxy.join()
     client.join()
