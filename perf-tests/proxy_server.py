@@ -20,8 +20,9 @@ import time
 from google.protobuf import json_format
 import inspect
 from collections import namedtuple
+import random
 
-def proxy_server_process(queue_map):
+def proxy_server_process(request_q, queue_pool):
     from concurrent import futures
 
     import grpc
@@ -34,17 +35,31 @@ def proxy_server_process(queue_map):
 
     class TestProxyServer(test_proxy_pb2_grpc.CloudBigtableV2TestProxyServicer):
 
+        def __init__(self, queue_pool):
+            self.in_use = set()
+            self.queue_pool = queue_pool
+
+        def get_queue_idx(self):
+            idx = None
+            while idx in self.in_use or idx is None:
+                idx = random.randint(0,len(queue_pool)-1)
+            self.in_use.add(idx)
+            return idx
+
         def defer_to_client(func, timeout_seconds=10):
             def wrapper(obj, request, context, **kwargs):
                 deadline = time.time() + timeout_seconds
                 json_dict = json_format.MessageToDict(request)
+                out_idx = obj.get_queue_idx()
                 json_dict["proxy_request"] = func.__name__
-                (in_q, out_q) = queue_map[func.__name__]
-                in_q.put(json_dict)
+                json_dict["response_queue_idx"] = out_idx
+                out_q = queue_pool[out_idx]
+                request_q.put(json_dict)
                 # wait for response
                 while time.time() < deadline:
                     if not out_q.empty():
                         response = out_q.get()
+                        obj.in_use.remove(out_idx)
                         print(f"{func.__name__} client response: {response=}")
                         return func(obj, request, context, **kwargs, response=response)
                     else:
@@ -80,13 +95,13 @@ def proxy_server_process(queue_map):
 
     port = '50055'
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    test_proxy_pb2_grpc.add_CloudBigtableV2TestProxyServicer_to_server(TestProxyServer(), server)
+    test_proxy_pb2_grpc.add_CloudBigtableV2TestProxyServicer_to_server(TestProxyServer(queue_pool), server)
     server.add_insecure_port('[::]:' + port)
     server.start()
     print("Server started, listening on " + port)
     server.wait_for_termination()
 
-def client_process(queue_map):
+def client_process(request_q, queue_pool):
     import google.cloud.bigtable_v2 as bigtable_v2
     print("listening")
 
@@ -103,45 +118,42 @@ def client_process(queue_map):
                 raise RuntimeError("client is closed")
             return {"status": "ok"}
 
-    in_queues = [queue.in_q for queue in queue_map.values()]
     client_map = {}
     while True:
-        for q in in_queues:
-            if not q.empty():
-                json_data = q.get()
-                # print(json_data)
-                fn_name = json_data.pop("proxy_request")
-                (_, out_q) = queue_map[fn_name]
-                client_id = json_data.get("clientId", None)
-                client = client_map.get(client_id, None)
-                if fn_name == "CreateClient":
-                    client = TestProxyHandler()
-                    client_map[client_id] = client
-                    out_q.put(True)
-                elif client is None:
-                    raise RuntimeError("client not found")
-                elif fn_name == "CloseClient":
-                    client.close()
-                    out_q.put(True)
-                elif fn_name == "RemoveClient":
-                    client_map.pop(json_data["client_id"], None)
-                    out_q.put(True)
-                else:
-                    # run actual rpc against client
-                    fn = getattr(client, fn_name)
-                    result = fn(json_data)
-                    out_q.put(result)
+        if not request_q.empty():
+            json_data = request_q.get()
+            # print(json_data)
+            fn_name = json_data.pop("proxy_request")
+            out_q = queue_pool[json_data.pop("response_queue_idx")]
+            client_id = json_data.get("clientId", None)
+            client = client_map.get(client_id, None)
+            if fn_name == "CreateClient":
+                client = TestProxyHandler()
+                client_map[client_id] = client
+                out_q.put(True)
+            elif client is None:
+                raise RuntimeError("client not found")
+            elif fn_name == "CloseClient":
+                client.close()
+                out_q.put(True)
+            elif fn_name == "RemoveClient":
+                client_map.pop(json_data["client_id"], None)
+                out_q.put(True)
+            else:
+                # run actual rpc against client
+                fn = getattr(client, fn_name)
+                result = fn(json_data)
+                out_q.put(result)
         time.sleep(0.1)
 
 if __name__ == '__main__':
-    rpc_names = ["ReadRows", "CreateClient", "CloseClient", "RemoveClient"]
-    RpcQueues = namedtuple("RpcQueues", ["in_q", "out_q"])
-    queue_map = {name: RpcQueues(multiprocessing.Queue(), multiprocessing.Queue()) for name in rpc_names}
+    queue_pool = [multiprocessing.Queue() for _ in range(100)]
+    request_q = multiprocessing.Queue()
     # proxy_server_process(queue_map)
     logging.basicConfig()
-    proxy = Process(target=proxy_server_process, args=(queue_map,))
+    proxy = Process(target=proxy_server_process, args=(request_q, queue_pool,))
     proxy.start()
-    client = Process(target=client_process, args=(queue_map,))
+    client = Process(target=client_process, args=(request_q, queue_pool,))
     client.start()
     proxy.join()
     client.join()
