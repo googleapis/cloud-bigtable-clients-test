@@ -35,7 +35,7 @@ class MockBigtableServicer(bigtable_pb2_grpc.BigtableServicer):
 
 
 def serve(server_addr="localhost:8081", serve_fn=None):
-  print("starting server")
+  print(f"starting server at {server_addr}")
   server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
   bigtable_pb2_grpc.add_BigtableServicer_to_server(
        MockBigtableServicer(serve_fn=serve_fn), server)

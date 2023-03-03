@@ -33,6 +33,8 @@ def grpc_server_process(request_q, queue_pool):
     import test_proxy_pb2
     import test_proxy_pb2_grpc
 
+    import data_pb2
+
     class TestProxyServer(test_proxy_pb2_grpc.CloudBigtableV2TestProxyServicer):
 
         def __init__(self, queue_pool):
@@ -53,10 +55,8 @@ def grpc_server_process(request_q, queue_pool):
                     if not out_q.empty():
                         response = out_q.get()
                         self.open_queues.append(out_idx)
-                        print(f"{func.__name__} client response: {response=}")
+                        # print(f"{func.__name__} client response: {response=}")
                         return func(self, request, context, **kwargs, response=response)
-                    else:
-                        time.sleep(0.1)
             return wrapper
 
         @defer_to_client
@@ -74,6 +74,7 @@ def grpc_server_process(request_q, queue_pool):
 
         @defer_to_client
         def ReadRows(self, request, context, response=None):
+            print(f"read rows: num chunks: {len(response)}" )
             return test_proxy_pb2.RowsResult()
 
         def ReadRow(self, request, context):
@@ -99,19 +100,36 @@ def client_handler_process(request_q, queue_pool):
     and runs the request using a client library instance
     """
     import google.cloud.bigtable_v2 as bigtable_v2
+    from google.cloud.bigtable_v2.services.bigtable.transports.grpc import BigtableGrpcTransport
+    import grpc
+    from google.api_core import client_options as client_options_lib
+    import re
+
+    def camel_to_snake(str):
+       return re.sub(r'(?<!^)(?=[A-Z])', '_', str).lower()
 
     class TestProxyHandler():
-        def __init__(self):
+        def __init__(self, data_target=None, project_id=None, instance_id=None, app_profile_id=None, per_operation_timeout=None, **kwargs):
             self.closed = False
-            self.client = bigtable_v2.BigtableClient()
+            transport = BigtableGrpcTransport(
+                channel=grpc.insecure_channel(data_target),
+            )
+            self.client = bigtable_v2.BigtableClient(transport=transport)
+            self.project_id = project_id
+            self.instance_id = instance_id
+            self.app_profile_id = app_profile_id
+            self.per_operation_timeout = per_operation_timeout
+
 
         def close(self):
             self.closed = True
 
-        def ReadRows(self, request_dict):
+        def ReadRows(self, request, **kwargs):
             if self.closed:
                 raise RuntimeError("client is closed")
-            return {"status": "ok"}
+            response = list(self.client.read_rows(request))
+            serialized_response = [str(r) for r in response]
+            return serialized_response
 
     # Listen to requests from grpc server process
     print("client_handler_process started")
@@ -119,6 +137,9 @@ def client_handler_process(request_q, queue_pool):
     while True:
         if not request_q.empty():
             json_data = request_q.get()
+            json_data = {camel_to_snake(k): v for k, v in json_data.items()}
+            if "request" in json_data:
+                json_data["request"] = {camel_to_snake(k): v for k, v in json_data["request"].items()}
             # print(json_data)
             fn_name = json_data.pop("proxy_request")
             out_q = queue_pool[json_data.pop("response_queue_idx")]
@@ -126,7 +147,7 @@ def client_handler_process(request_q, queue_pool):
             client = client_map.get(client_id, None)
             # handle special cases for client creation and deletion
             if fn_name == "CreateClient":
-                client = TestProxyHandler()
+                client = TestProxyHandler(**json_data)
                 client_map[client_id] = client
                 out_q.put(True)
             elif client is None:
@@ -140,9 +161,8 @@ def client_handler_process(request_q, queue_pool):
             else:
                 # run actual rpc against client
                 fn = getattr(client, fn_name)
-                result = fn(json_data)
+                result = fn(**json_data)
                 out_q.put(result)
-        time.sleep(0.1)
 
 if __name__ == '__main__':
     # start and run both processes
