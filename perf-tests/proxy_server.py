@@ -29,6 +29,23 @@ def proxy_server_process(queue_map):
     import test_proxy_pb2_grpc
 
     # from proxy_server_2 import CreateClient as proxy_client
+    def defer_to_client(func, timeout_seconds=10):
+        def wrapper(obj, request, context, **kwargs):
+            deadline = time.time() + timeout_seconds
+            json_dict = json_format.MessageToDict(request)
+            json_dict["proxy_request"] = func.__name__
+            (in_q, out_q) = queue_map[func.__name__]
+            in_q.put(json_dict)
+            # wait for response
+            while time.time() < deadline:
+                if not out_q.empty():
+                    response = out_q.get()
+                    print(f"read rows response: {response=}")
+                    return func(obj, request, context, **kwargs, response=response)
+                else:
+                    time.sleep(0.1)
+        return wrapper
+
 
     class TestProxyServer(test_proxy_pb2_grpc.CloudBigtableV2TestProxyServicer):
 
@@ -45,20 +62,10 @@ def proxy_server_process(queue_map):
             print(f"readrow: {request=}")
             return test_proxy_pb2.RowResult()
 
-        def ReadRows(self, request, context):
-            # print(f"read rows: {request.client_id=} {request.request=}" )
-            json_dict = json_format.MessageToDict(request)
-            fn_name = inspect.currentframe().f_code.co_name
-            json_dict["proxy_request"] = fn_name
-            (in_q, out_q) = queue_map[fn_name]
-            in_q.put(json_dict)
-            while True:
-                if not out_q.empty():
-                    response = out_q.get()
-                    print(f"read rows response: {response=}")
-                    return test_proxy_pb2.RowsResult()
-                else:
-                    time.sleep(0.1)
+        @defer_to_client
+        def ReadRows(self, request, context, response=None):
+            print(f"read rows response: {response=}")
+            return test_proxy_pb2.RowsResult()
 
         def MutateRow(self, request, context):
             print(f"mutate rows: {request.client_id=} {request.request=}" )
