@@ -73,6 +73,7 @@ def grpc_server_process(request_q, queue_pool):
                             raise response
                         else:
                             return func(self, request, context, client_response=response, **kwargs)
+                    time.sleep(1e4)
             return wrapper
 
         @defer_to_client
@@ -202,6 +203,7 @@ def client_handler_process(request_q, queue_pool):
                 fn = getattr(client, fn_name)
                 result = fn(**json_data)
                 out_q.put(result)
+        time.sleep(1e4)
 
 if __name__ == '__main__':
     # start and run both processes
