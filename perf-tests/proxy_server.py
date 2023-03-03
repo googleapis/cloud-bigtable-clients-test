@@ -94,14 +94,6 @@ def grpc_server_process(request_q, queue_pool):
             print(f"read rows: num chunks: {len(client_response)}" )
             return test_proxy_pb2.RowsResult()
 
-        def ReadRow(self, request, context):
-            print(f"readrow: {request=}")
-            return test_proxy_pb2.RowResult()
-
-        def MutateRow(self, request, context):
-            print(f"mutate rows: {request.client_id=} {request.request=}" )
-            return test_proxy_pb2.MutateRowResult()
-
     # Start gRPC server
     port = '50055'
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
