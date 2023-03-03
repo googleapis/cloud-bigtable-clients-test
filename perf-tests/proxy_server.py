@@ -190,7 +190,7 @@ def client_handler_process(request_q, queue_pool):
                 client_map[client_id] = client
                 out_q.put(True)
             elif client is None:
-                raise RuntimeError("client not found")
+                out_q.put(RuntimeError("client not found"))
             elif fn_name == "CloseClient":
                 client.close()
                 out_q.put(True)
