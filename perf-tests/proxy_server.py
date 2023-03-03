@@ -62,25 +62,25 @@ def grpc_server_process(request_q, queue_pool):
                         if isinstance(response, Exception):
                             raise response
                         else:
-                            return func(self, request, context, **kwargs, response=response)
+                            return func(self, request, context, client_response=response, **kwargs)
             return wrapper
 
         @defer_to_client
-        def CreateClient(self, request, context, response=None):
+        def CreateClient(self, request, context, client_response=None):
             return test_proxy_pb2.CreateClientResponse()
 
         @defer_to_client
-        def CloseClient(self, request, context):
+        def CloseClient(self, request, context, client_response=None):
             return test_proxy_pb2.CloseClientResponse()
 
         @defer_to_client
-        def RemoveClient(self, request, context, response=None):
+        def RemoveClient(self, request, context, client_response=None):
             print(request)
             return test_proxy_pb2.RemoveClientResponse()
 
         @defer_to_client
-        def ReadRows(self, request, context, response=None):
-            print(f"read rows: num chunks: {len(response)}" )
+        def ReadRows(self, request, context, client_response=None):
+            print(f"read rows: num chunks: {len(client_response)}" )
             return test_proxy_pb2.RowsResult()
 
         def ReadRow(self, request, context):
