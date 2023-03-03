@@ -35,7 +35,17 @@ def grpc_server_process(request_q, queue_pool):
 
     import data_pb2
 
-    class TestProxyServer(test_proxy_pb2_grpc.CloudBigtableV2TestProxyServicer):
+    class TestProxyGrpcServer(test_proxy_pb2_grpc.CloudBigtableV2TestProxyServicer):
+        """
+        Implements a grpc server that proxies conformance test requests to the client library
+
+        Due to issues with using protoc-compiled protos and client-library
+        proto-plus objects in the same process, this server defers requests to
+        matching methods in  a TestProxyClientHandler instance in a separate 
+        process.
+        This happens invisbly in the decorator @defer_to_client, with the 
+        results attached to each request as a client_response kwarg
+        """
 
         def __init__(self, queue_pool):
             self.open_queues = list(range(len(queue_pool)))
@@ -94,7 +104,9 @@ def grpc_server_process(request_q, queue_pool):
     # Start gRPC server
     port = '50055'
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    test_proxy_pb2_grpc.add_CloudBigtableV2TestProxyServicer_to_server(TestProxyServer(queue_pool), server)
+    test_proxy_pb2_grpc.add_CloudBigtableV2TestProxyServicer_to_server(
+        TestProxyGrpcServer(queue_pool), server
+    )
     server.add_insecure_port('[::]:' + port)
     server.start()
     print("grpc_server_process started, listening on " + port)
@@ -114,7 +126,15 @@ def client_handler_process(request_q, queue_pool):
     def camel_to_snake(str):
        return re.sub(r'(?<!^)(?=[A-Z])', '_', str).lower()
 
-    class TestProxyHandler():
+    class TestProxyClientHandler():
+        """
+        Implements the same methods as the grpc server, but handles the client
+        library side of the request.
+
+        Requests received in TestProxyGrpcServer are converted to a dictionary,
+        and supplied to the TestProxyClientHandler methods as kwargs. 
+        The client response is then returned back to the TestProxyGrpcServer
+        """
         def __init__(self, data_target=None, project_id=None, instance_id=None, app_profile_id=None, per_operation_timeout=None, **kwargs):
             self.closed = False
             transport = BigtableGrpcTransport(
@@ -129,7 +149,7 @@ def client_handler_process(request_q, queue_pool):
         def error_safe(func):
             """
             Catch and pass errors back to the grpc_server_process
-            Also check for closed client before processing requests
+            Also check if client is closed before processing requests
             """
             def wrapper(self, *args, **kwargs):
                 try:
@@ -166,7 +186,7 @@ def client_handler_process(request_q, queue_pool):
             client = client_map.get(client_id, None)
             # handle special cases for client creation and deletion
             if fn_name == "CreateClient":
-                client = TestProxyHandler(**json_data)
+                client = TestProxyClientHandler(**json_data)
                 client_map[client_id] = client
                 out_q.put(True)
             elif client is None:
