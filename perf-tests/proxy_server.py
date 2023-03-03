@@ -175,7 +175,7 @@ def client_handler_process(request_q, queue_pool):
             # print(json_data)
             fn_name = json_data.pop("proxy_request")
             out_q = queue_pool[json_data.pop("response_queue_idx")]
-            client_id = json_data.get("clientId", None)
+            client_id = json_data["client_id"]
             client = client_map.get(client_id, None)
             # handle special cases for client creation and deletion
             if fn_name == "CreateClient":
