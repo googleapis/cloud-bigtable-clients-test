@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	cloud.google.com/go/bigtable v1.18.1
-	github.com/golang/protobuf v1.5.2
+	github.com/golang/protobuf v1.5.3
 	github.com/google/go-cmp v0.5.9
 	github.com/stretchr/testify v1.8.2
 	google.golang.org/api v0.111.0
