@@ -200,7 +200,7 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 		&readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("qfoo", "v_q", Drop)}}, // Chunkless response due to Drop
-		&readRowsAction{rpcError: codes.DeadlineExceeded}, // Server-side DeadlineExceeded should be retry-able.
+		&readRowsAction{rpcError: codes.Unavailable}, // A retry-able error
 		&readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("zbar", "v_z", Commit)}},
