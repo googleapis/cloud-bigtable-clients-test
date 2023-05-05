@@ -175,7 +175,7 @@ func TestMutateRows_NoRetry_NonTransientErrors(t *testing.T) {
 
 	// 4b. Check the per-row status
 	outputIndices := []int{}
-	for _, entry := range res.GetEntry() {
+	for _, entry := range res.GetEntries() {
 		outputIndices = append(outputIndices, int(entry.GetIndex()))
 		assert.Equal(t, int32(codes.PermissionDenied), entry.GetStatus().GetCode())
 	}
@@ -222,7 +222,7 @@ func TestMutateRows_Generic_DeadlineExceeded(t *testing.T) {
 
 	// 4c. Check the per-row error
 	checkResultOkStatus(t, res)
-	for _, entry := range res.GetEntry() {
+	for _, entry := range res.GetEntries() {
 		assert.Equal(t, int32(codes.DeadlineExceeded), entry.GetStatus().GetCode())
 	}
 }

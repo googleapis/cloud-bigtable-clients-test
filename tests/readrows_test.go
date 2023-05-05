@@ -141,8 +141,8 @@ func TestReadRows_NoRetry_ErrorAfterLastRow(t *testing.T) {
 
 	// 4a. Verify that the read succeeds
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 1, len(res.GetRow()))
-	assert.Equal(t, "row-01", string(res.Row[0].Key))
+	assert.Equal(t, 1, len(res.GetRows()))
+	assert.Equal(t, "row-01", string(res.Rows[0].Key))
 }
 
 // TestReadRows_Retry_PausedScan tests that client will transparently resume the scan when a stream
@@ -176,9 +176,9 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 
 	// 4a. Verify that two rows were read successfully
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 2, len(res.GetRow()))
-	assert.Equal(t, "row-01", string(res.Row[0].Key))
-	assert.Equal(t, "row-05", string(res.Row[1].Key))
+	assert.Equal(t, 2, len(res.GetRows()))
+	assert.Equal(t, "row-01", string(res.Rows[0].Key))
+	assert.Equal(t, "row-05", string(res.Rows[1].Key))
 
 	// 4b. Verify that client sent the requests properly
 	origReq := <-recorder
@@ -219,9 +219,9 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 
 	// 4a. Verify that rows aabar and zzbar were read successfully (qqfoo doesn't match the filter)
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 2, len(res.GetRow()))
-	assert.Equal(t, "abar", string(res.Row[0].Key))
-	assert.Equal(t, "zbar", string(res.Row[1].Key))
+	assert.Equal(t, 2, len(res.GetRows()))
+	assert.Equal(t, "abar", string(res.Rows[0].Key))
+	assert.Equal(t, "zbar", string(res.Rows[1].Key))
 
 	// 4b. Verify that client sent the retry request properly
 	loggedReq := <-recorder
@@ -290,8 +290,8 @@ func TestReadRows_Generic_MultiStreams(t *testing.T) {
 
 	// 4c. Check the row keys in the results.
 	for i := 0; i < concurrency; i++ {
-		assert.Equal(t, rowKeys[i][0], string(results[i].Row[0].Key))
-		assert.Equal(t, rowKeys[i][1], string(results[i].Row[1].Key))
+		assert.Equal(t, rowKeys[i][0], string(results[i].Rows[0].Key))
+		assert.Equal(t, rowKeys[i][1], string(results[i].Rows[1].Key))
 	}
 }
 
@@ -337,10 +337,10 @@ func TestReadRows_Retry_StreamReset(t *testing.T) {
 
 	// 4a. Verify that rows were read successfully
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 3, len(res.GetRow()))
-	assert.Equal(t, "abar", string(res.Row[0].Key))
-	assert.Equal(t, "qbar", string(res.Row[1].Key))
-	assert.Equal(t, "zbar", string(res.Row[2].Key))
+	assert.Equal(t, 3, len(res.GetRows()))
+	assert.Equal(t, "abar", string(res.Rows[0].Key))
+	assert.Equal(t, "qbar", string(res.Rows[1].Key))
+	assert.Equal(t, "zbar", string(res.Rows[2].Key))
 
 	// 4b. Verify that client sent the only retry request properly
 	assert.Equal(t, 2, len(recorder))
@@ -390,7 +390,7 @@ func TestReadRows_NoRetry_MultipleIndividualRowKeys(t *testing.T) {
 
 	// 3. Perform the operation via test proxy
 	res := doReadRowsOp(t, server, &req, nil)
-	assert.Len(t, res.Row, 3)
+	assert.Len(t, res.Rows, 3)
 
 }
 
@@ -411,7 +411,7 @@ func TestReadRows_NoRetry_EmptyTableNoRows(t *testing.T) {
 
 	// 3. Perform the operation via test proxy
 	res := doReadRowsOp(t, server, &req, nil)
-	assert.Len(t, res.Row, 0)
+	assert.Len(t, res.Rows, 0)
 }
 
 // TestReadRows_NoRetry_MultipleRowRanges tests that the client can request multiple
@@ -471,7 +471,7 @@ func TestReadRows_NoRetry_MultipleRowRanges(t *testing.T) {
 
 	// 3. Perform the operation via test proxy
 	res := doReadRowsOp(t, server, &req, nil)
-	assert.Len(t, res.Row, 4)
+	assert.Len(t, res.Rows, 4)
 }
 
 // TestReadRows_NoRetry_ClosedStartUnspecifiedEnd tests that the client can request
@@ -513,7 +513,7 @@ func TestReadRows_NoRetry_ClosedStartUnspecifiedEnd(t *testing.T) {
 
 	// 3. Perform the operation via test proxy
 	res := doReadRowsOp(t, server, &req, nil)
-	assert.Len(t, res.Row, 2)
+	assert.Len(t, res.Rows, 2)
 }
 
 // TestReadRows_NoRetry_OpenEndUnspecifiedStart tests that the client can request
@@ -549,7 +549,7 @@ func TestReadRows_NoRetry_OpenEndUnspecifiedStart(t *testing.T) {
 
 	// 3. Perform the operation via test proxy
 	res := doReadRowsOp(t, server, &req, nil)
-	assert.Len(t, res.Row, 1)
+	assert.Len(t, res.Rows, 1)
 }
 
 // TestReadRows_Generic_CloseClient tests that client doesn't kill inflight requests after
@@ -625,8 +625,8 @@ func TestReadRows_Generic_CloseClient(t *testing.T) {
 	// 4b. Check that all the batch-one requests succeeded
 	checkResultOkStatus(t, resultsBatchOne...)
 	for i := 0; i < halfBatchSize; i++ {
-		assert.Equal(t, rowKeys[i][0], string(resultsBatchOne[i].Row[0].Key))
-		assert.Equal(t, rowKeys[i][1], string(resultsBatchOne[i].Row[1].Key))
+		assert.Equal(t, rowKeys[i][0], string(resultsBatchOne[i].Rows[0].Key))
+		assert.Equal(t, rowKeys[i][1], string(resultsBatchOne[i].Rows[1].Key))
 	}
 
 	// 4c. Check that all the batch-two requests failed at the proxy level:

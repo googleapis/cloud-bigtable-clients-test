@@ -99,9 +99,9 @@ func TestSampleRowKeys_NoRetry_NoEmptyKey(t *testing.T) {
 
 	// 4a. Check that the operation succeeded
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 2, len(res.GetSample()))
-	assert.Equal(t, "row-31", string(res.GetSample()[0].RowKey))
-	assert.Equal(t, "row-98", string(res.GetSample()[1].RowKey))
+	assert.Equal(t, 2, len(res.GetSamples()))
+	assert.Equal(t, "row-31", string(res.GetSamples()[0].RowKey))
+	assert.Equal(t, "row-98", string(res.GetSamples()[1].RowKey))
 
 	// 4b. Check that the request is received as expected
 	loggedReq := <-recorder
