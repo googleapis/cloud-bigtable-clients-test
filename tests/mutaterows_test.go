@@ -173,7 +173,8 @@ func TestMutateRows_NoRetry_NonTransientErrors(t *testing.T) {
 	// 4a. Check the number of requests in the recorder
 	assert.Equal(t, numRPCs, len(recorder))
 
-	// 4b. Check the per-row status
+	// 4b. Check the two failed rows
+	assert.Equal(t, 2, len(res.GetEntries()))
 	outputIndices := []int{}
 	for _, entry := range res.GetEntries() {
 		outputIndices = append(outputIndices, int(entry.GetIndex()))
@@ -220,8 +221,9 @@ func TestMutateRows_Generic_DeadlineExceeded(t *testing.T) {
 	assert.GreaterOrEqual(t, runTimeSecs, 2)
 	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
 
-	// 4c. Check the per-row error
+	// 4c. Check the failed row
 	checkResultOkStatus(t, res)
+	assert.Equal(t, 1, len(res.GetEntries()))
 	for _, entry := range res.GetEntries() {
 		assert.Equal(t, int32(codes.DeadlineExceeded), entry.GetStatus().GetCode())
 	}
