@@ -10,7 +10,7 @@ require (
 	google.golang.org/api v0.133.0
 	google.golang.org/genproto v0.0.0-20230726155614-23370e0ffb3e
 	google.golang.org/genproto/googleapis/api v0.0.0-20230726155614-23370e0ffb3e
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230726155614-23370e0ffb3e
 	google.golang.org/grpc v1.56.2
 	google.golang.org/protobuf v1.31.0
 )
