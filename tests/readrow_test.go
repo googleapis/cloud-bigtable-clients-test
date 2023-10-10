@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !emulator
 // +build !emulator
 
 // The test cases in this file will use dummyChunkData() from readrows_test.go.
@@ -53,9 +54,9 @@ func TestReadRow_Generic_Headers(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowRequest{
-		ClientId: t.Name(),
+		ClientId:  t.Name(),
 		TableName: tableName,
-		RowKey: "row-01",
+		RowKey:    "row-01",
 	}
 
 	// 3. Perform the operation via test proxy
@@ -71,7 +72,7 @@ func TestReadRow_Generic_Headers(t *testing.T) {
 	}
 
 	resource := md["x-goog-request-params"][0]
-        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+	if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
 	assert.Contains(t, resource, profileID)
@@ -195,8 +196,8 @@ func TestReadRow_Generic_MultiStreams(t *testing.T) {
 	for i := 0; i < concurrency; i++ {
 		// Each request will get a different response.
 		actions[i] = &readRowsAction{
-			chunks:      []chunkData{dummyChunkData(rowKeys[i], fmt.Sprintf("value%d", i), Commit)},
-			delayStr:    "2s",
+			chunks:   []chunkData{dummyChunkData(rowKeys[i], fmt.Sprintf("value%d", i), Commit)},
+			delayStr: "2s",
 		}
 	}
 	server := initMockServer(t)
@@ -225,6 +226,14 @@ func TestReadRow_Generic_MultiStreams(t *testing.T) {
 
 	// 4c. Check the row keys in the results.
 	for i := 0; i < concurrency; i++ {
+		assert.NotNil(t, results[i])
+		if results[i] == nil {
+			continue
+		}
+		assert.NotNil(t, results[i].Row)
+		if results[i].Row == nil {
+			continue
+		}
 		assert.Equal(t, rowKeys[i], string(results[i].Row.Key))
 	}
 }
@@ -240,11 +249,11 @@ func TestReadRow_Generic_CloseClient(t *testing.T) {
 
 	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, requestRecorderCapacity)
-	actions := make([]*readRowsAction, 2 * halfBatchSize)
-	for i := 0; i < 2 * halfBatchSize; i++ {
+	actions := make([]*readRowsAction, 2*halfBatchSize)
+	for i := 0; i < 2*halfBatchSize; i++ {
 		// Each request will get a different response.
 		actions[i] = &readRowsAction{
-			chunks: []chunkData{dummyChunkData(rowKeys[i], fmt.Sprintf("value%d", i), Commit)},
+			chunks:   []chunkData{dummyChunkData(rowKeys[i], fmt.Sprintf("value%d", i), Commit)},
 			delayStr: "2s",
 		}
 	}
@@ -263,7 +272,7 @@ func TestReadRow_Generic_CloseClient(t *testing.T) {
 		reqsBatchTwo[i] = &testproxypb.ReadRowRequest{
 			ClientId:  clientID,
 			TableName: buildTableName("table"),
-			RowKey:    rowKeys[i + halfBatchSize],
+			RowKey:    rowKeys[i+halfBatchSize],
 		}
 	}
 
@@ -281,6 +290,14 @@ func TestReadRow_Generic_CloseClient(t *testing.T) {
 	// 4b. Check that all the batch-one requests succeeded
 	checkResultOkStatus(t, resultsBatchOne...)
 	for i := 0; i < halfBatchSize; i++ {
+		assert.NotNil(t, resultsBatchOne[i])
+		if resultsBatchOne[i] == nil {
+			continue
+		}
+		assert.NotNil(t, resultsBatchOne[i].Row)
+		if resultsBatchOne[i].Row == nil {
+			continue
+		}
 		assert.Equal(t, rowKeys[i], string(resultsBatchOne[i].Row.Key))
 	}
 
@@ -294,4 +311,3 @@ func TestReadRow_Generic_CloseClient(t *testing.T) {
 		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
 	}
 }
-

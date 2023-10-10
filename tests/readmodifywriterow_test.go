@@ -236,6 +236,14 @@ func TestReadModifyWriteRow_Generic_MultiStreams(t *testing.T) {
 
 	// 4c. Check the row keys in the results.
 	for i := 0; i < concurrency; i++ {
+		assert.NotNil(t, results[i])
+		if results[i] == nil {
+			continue
+		}
+		assert.NotNil(t, results[i].Row)
+		if results[i].Row == nil {
+			continue
+		}
 		assert.Equal(t, rowKeys[i], string(results[i].Row.Key))
 	}
 }

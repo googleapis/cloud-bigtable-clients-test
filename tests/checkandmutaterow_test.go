@@ -211,6 +211,14 @@ func TestCheckAndMutateRow_Generic_MultiStreams(t *testing.T) {
 
 	// 4c. Check the results.
 	for i := 0; i < concurrency; i++ {
+		assert.NotNil(t, results[i])
+		if results[i] == nil {
+			continue
+		}
+		assert.NotNil(t, results[i].Result)
+		if results[i].Result == nil {
+			continue
+		}
 		assert.Equal(t, predicateMatched[i], results[i].Result.PredicateMatched)
 	}
 }
