@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !emulator
 // +build !emulator
 
 package tests
@@ -77,7 +78,7 @@ func TestReadRows_Generic_Headers(t *testing.T) {
 	}
 
 	resource := md["x-goog-request-params"][0]
-        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+	if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
 	assert.Contains(t, resource, profileID)
@@ -168,7 +169,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
 		ClientId: t.Name(),
-		Request: clientReq,
+		Request:  clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -570,8 +571,8 @@ func TestReadRows_Generic_CloseClient(t *testing.T) {
 
 	// 1. Instantiate the mock server
 	recorder := make(chan *readRowsReqRecord, requestRecorderCapacity)
-	actions := make([]*readRowsAction, 2 * halfBatchSize)
-	for i := 0; i < 2 * halfBatchSize; i++ {
+	actions := make([]*readRowsAction, 2*halfBatchSize)
+	for i := 0; i < 2*halfBatchSize; i++ {
 		// Each request will get a different response.
 		actions[i] = &readRowsAction{
 			chunks: []chunkData{
@@ -598,13 +599,13 @@ func TestReadRows_Generic_CloseClient(t *testing.T) {
 			},
 		}
 		reqsBatchTwo[i] = &testproxypb.ReadRowsRequest{
-			ClientId:  clientID,
+			ClientId: clientID,
 			Request: &btpb.ReadRowsRequest{
 				TableName: buildTableName("table"),
 				Rows: &btpb.RowSet{
 					RowKeys: [][]byte{
-						[]byte(rowKeys[i + halfBatchSize][0]),
-						[]byte(rowKeys[i + halfBatchSize][1]),
+						[]byte(rowKeys[i+halfBatchSize][0]),
+						[]byte(rowKeys[i+halfBatchSize][1]),
 					},
 				},
 			},
@@ -625,6 +626,14 @@ func TestReadRows_Generic_CloseClient(t *testing.T) {
 	// 4b. Check that all the batch-one requests succeeded
 	checkResultOkStatus(t, resultsBatchOne...)
 	for i := 0; i < halfBatchSize; i++ {
+		assert.NotNil(t, resultsBatchOne[i])
+		if resultsBatchOne[i] == nil {
+			continue
+		}
+		assert.NotNil(t, resultsBatchOne[i].Rows)
+		if resultsBatchOne[i].Rows == nil {
+			continue
+		}
 		assert.Equal(t, rowKeys[i][0], string(resultsBatchOne[i].Rows[0].Key))
 		assert.Equal(t, rowKeys[i][1], string(resultsBatchOne[i].Rows[1].Key))
 	}
@@ -653,8 +662,8 @@ func TestReadRows_Generic_DeadlineExceeded(t *testing.T) {
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
-		ClientId:  t.Name(),
-		Request: &btpb.ReadRowsRequest{TableName: buildTableName("table")},
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
 	}
 
 	// 3. Perform the operation via test proxy
@@ -677,4 +686,3 @@ func TestReadRows_Generic_DeadlineExceeded(t *testing.T) {
 		assert.Contains(t, strings.ToLower(strings.ReplaceAll(msg, " ", "")), "deadlineexceeded")
 	}
 }
-

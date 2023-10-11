@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !emulator
 // +build !emulator
 
 package tests
@@ -41,7 +42,7 @@ func dummyReadModifyWriteRowRequest(tableID string, rowKey []byte, increments []
 	req := &btpb.ReadModifyWriteRowRequest{
 		TableName: buildTableName(tableID),
 		RowKey:    rowKey,
-		Rules:	   []*btpb.ReadModifyWriteRule{},
+		Rules:     []*btpb.ReadModifyWriteRule{},
 	}
 
 	i := 0
@@ -91,7 +92,7 @@ func dummyResultRow(rowKey []byte, increments []int64, appends []string) *btpb.R
 	}
 
 	row := &btpb.Row{
-		Key:      rowKey,
+		Key: rowKey,
 		Families: []*btpb.Family{
 			&btpb.Family{
 				Name: "f",
@@ -136,7 +137,7 @@ func TestReadModifyWriteRow_Generic_Headers(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadModifyWriteRowRequest{
 		ClientId: t.Name(),
-		Request: dummyReadModifyWriteRowRequest(tableID, rowKey, increments, appends),
+		Request:  dummyReadModifyWriteRowRequest(tableID, rowKey, increments, appends),
 	}
 
 	// 3. Perform the operation via test proxy
@@ -152,7 +153,7 @@ func TestReadModifyWriteRow_Generic_Headers(t *testing.T) {
 	}
 
 	resource := md["x-goog-request-params"][0]
-        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+	if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
 	assert.Contains(t, resource, profileID)
@@ -188,8 +189,8 @@ func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 		t.Errorf("diff found (-want +got):\n%s", diff)
 	}
 	assert.Equal(t, rowKey, res.Row.Key)
-	assert.Equal(t, 10 + 2, int(binary.BigEndian.Uint64(res.Row.Families[0].Columns[0].Cells[0].Value)))
-	assert.Equal(t, "str1" + "str2", string(res.Row.Families[0].Columns[1].Cells[0].Value))
+	assert.Equal(t, 10+2, int(binary.BigEndian.Uint64(res.Row.Families[0].Columns[0].Cells[0].Value)))
+	assert.Equal(t, "str1"+"str2", string(res.Row.Families[0].Columns[1].Cells[0].Value))
 }
 
 // TestReadModifyWriteRow_Generic_MultiStreams tests that client can have multiple concurrent streams.
@@ -206,7 +207,7 @@ func TestReadModifyWriteRow_Generic_MultiStreams(t *testing.T) {
 	actions := make([]*readModifyWriteRowAction, concurrency)
 	for i := 0; i < concurrency; i++ {
 		actions[i] = &readModifyWriteRowAction{
-			row: dummyResultRow([]byte(rowKeys[i]), increments, appends),
+			row:      dummyResultRow([]byte(rowKeys[i]), increments, appends),
 			delayStr: "2s"}
 	}
 	server := initMockServer(t)
@@ -235,6 +236,14 @@ func TestReadModifyWriteRow_Generic_MultiStreams(t *testing.T) {
 
 	// 4c. Check the row keys in the results.
 	for i := 0; i < concurrency; i++ {
+		assert.NotNil(t, results[i])
+		if results[i] == nil {
+			continue
+		}
+		assert.NotNil(t, results[i].Row)
+		if results[i].Row == nil {
+			continue
+		}
 		assert.Equal(t, rowKeys[i], string(results[i].Row.Key))
 	}
 }
@@ -284,10 +293,10 @@ func TestReadModifyWriteRow_Generic_CloseClient(t *testing.T) {
 
 	// 1. Instantiate the mock server
 	recorder := make(chan *readModifyWriteRowReqRecord, requestRecorderCapacity)
-	actions := make([]*readModifyWriteRowAction, 2 * halfBatchSize)
-	for i := 0; i < 2 * halfBatchSize; i++ {
+	actions := make([]*readModifyWriteRowAction, 2*halfBatchSize)
+	for i := 0; i < 2*halfBatchSize; i++ {
 		actions[i] = &readModifyWriteRowAction{
-			row: dummyResultRow([]byte(rowKeys[i]), increments, appends),
+			row:      dummyResultRow([]byte(rowKeys[i]), increments, appends),
 			delayStr: "2s",
 		}
 	}
@@ -300,12 +309,12 @@ func TestReadModifyWriteRow_Generic_CloseClient(t *testing.T) {
 	for i := 0; i < halfBatchSize; i++ {
 		reqsBatchOne[i] = &testproxypb.ReadModifyWriteRowRequest{
 			ClientId: clientID,
-			Request: dummyReadModifyWriteRowRequest("table", []byte(rowKeys[i]), increments, appends),
+			Request:  dummyReadModifyWriteRowRequest("table", []byte(rowKeys[i]), increments, appends),
 		}
 		reqsBatchTwo[i] = &testproxypb.ReadModifyWriteRowRequest{
-			ClientId:  clientID,
+			ClientId: clientID,
 			Request: dummyReadModifyWriteRowRequest(
-				"table", []byte(rowKeys[i + halfBatchSize]), increments, appends),
+				"table", []byte(rowKeys[i+halfBatchSize]), increments, appends),
 		}
 	}
 
@@ -323,6 +332,10 @@ func TestReadModifyWriteRow_Generic_CloseClient(t *testing.T) {
 	// 4b. Check that all the batch-one requests succeeded
 	checkResultOkStatus(t, resultsBatchOne...)
 	for i := 0; i < halfBatchSize; i++ {
+		assert.NotNil(t, resultsBatchOne[i])
+		if resultsBatchOne[i] == nil {
+			continue
+		}
 		assert.Equal(t, rowKeys[i], string(resultsBatchOne[i].Row.Key))
 	}
 
@@ -349,7 +362,7 @@ func TestReadModifyWriteRow_Generic_DeadlineExceeded(t *testing.T) {
 	// 1. Instantiate the mock server
 	recorder := make(chan *readModifyWriteRowReqRecord, 1)
 	action := &readModifyWriteRowAction{
-		row: dummyResultRow(rowKey, increments, appends),
+		row:      dummyResultRow(rowKey, increments, appends),
 		delayStr: "10s",
 	}
 	server := initMockServer(t)
@@ -358,7 +371,7 @@ func TestReadModifyWriteRow_Generic_DeadlineExceeded(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadModifyWriteRowRequest{
 		ClientId: t.Name(),
-		Request: clientReq,
+		Request:  clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -377,4 +390,3 @@ func TestReadModifyWriteRow_Generic_DeadlineExceeded(t *testing.T) {
 	// 4b. Check the DeadlineExceeded error
 	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
-

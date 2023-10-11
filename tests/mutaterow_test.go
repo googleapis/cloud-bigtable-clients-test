@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !emulator
 // +build !emulator
 
 package tests
@@ -42,7 +43,7 @@ import (
 func dummyMutateRowRequest(tableID string, rowKey []byte, numMutations int) *btpb.MutateRowRequest {
 	req := &btpb.MutateRowRequest{
 		TableName: buildTableName(tableID),
-		RowKey: rowKey,
+		RowKey:    rowKey,
 		Mutations: []*btpb.Mutation{},
 	}
 	for i := 0; i < numMutations; i++ {
@@ -99,7 +100,7 @@ func TestMutateRow_Generic_Headers(t *testing.T) {
 	}
 
 	resource := md["x-goog-request-params"][0]
-        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+	if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
 	assert.Contains(t, resource, profileID)
@@ -147,7 +148,7 @@ func TestMutateRow_NoRetry_MultipleMutations(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowRequest{
 		ClientId: t.Name(),
-		Request: clientReq,
+		Request:  clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -212,8 +213,8 @@ func TestMutateRow_Generic_CloseClient(t *testing.T) {
 
 	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowReqRecord, requestRecorderCapacity)
-	actions := make([]*mutateRowAction, 2 * halfBatchSize)
-	for i := 0; i < 2 * halfBatchSize; i++ {
+	actions := make([]*mutateRowAction, 2*halfBatchSize)
+	for i := 0; i < 2*halfBatchSize; i++ {
 		actions[i] = &mutateRowAction{delayStr: "2s"}
 	}
 	server := initMockServer(t)
@@ -225,11 +226,11 @@ func TestMutateRow_Generic_CloseClient(t *testing.T) {
 	for i := 0; i < halfBatchSize; i++ {
 		reqsBatchOne[i] = &testproxypb.MutateRowRequest{
 			ClientId: clientID,
-			Request: dummyMutateRowRequest("table", []byte(rowKeys[i]), 1),
+			Request:  dummyMutateRowRequest("table", []byte(rowKeys[i]), 1),
 		}
 		reqsBatchTwo[i] = &testproxypb.MutateRowRequest{
 			ClientId: clientID,
-			Request: dummyMutateRowRequest("table", []byte(rowKeys[i + halfBatchSize]), 1),
+			Request:  dummyMutateRowRequest("table", []byte(rowKeys[i+halfBatchSize]), 1),
 		}
 	}
 
@@ -269,7 +270,7 @@ func TestMutateRow_Generic_DeadlineExceeded(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.MutateRowRequest{
 		ClientId: t.Name(),
-		Request: dummyMutateRowRequest("table", []byte("row-01"), 2),
+		Request:  dummyMutateRowRequest("table", []byte("row-01"), 2),
 	}
 
 	// 3. Perform the operation via test proxy
@@ -288,4 +289,3 @@ func TestMutateRow_Generic_DeadlineExceeded(t *testing.T) {
 	// 4b. Check the DeadlineExceeded error
 	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
-

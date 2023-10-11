@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !emulator
 // +build !emulator
 
 package tests
@@ -99,7 +100,7 @@ func TestCheckAndMutateRow_Generic_Headers(t *testing.T) {
 	}
 
 	resource := md["x-goog-request-params"][0]
-        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+	if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
 	assert.Contains(t, resource, profileID)
@@ -121,7 +122,7 @@ func TestCheckAndMutateRow_NoRetry_TrueMutations(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
 		ClientId: t.Name(),
-		Request: clientReq,
+		Request:  clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -181,7 +182,7 @@ func TestCheckAndMutateRow_Generic_MultiStreams(t *testing.T) {
 	for i := 0; i < concurrency; i++ {
 		actions[i] = &checkAndMutateRowAction{
 			predicateMatched: predicateMatched[i],
-			delayStr: "2s",
+			delayStr:         "2s",
 		}
 	}
 	server := initMockServer(t)
@@ -210,6 +211,14 @@ func TestCheckAndMutateRow_Generic_MultiStreams(t *testing.T) {
 
 	// 4c. Check the results.
 	for i := 0; i < concurrency; i++ {
+		assert.NotNil(t, results[i])
+		if results[i] == nil {
+			continue
+		}
+		assert.NotNil(t, results[i].Result)
+		if results[i].Result == nil {
+			continue
+		}
 		assert.Equal(t, predicateMatched[i], results[i].Result.PredicateMatched)
 	}
 }
@@ -256,12 +265,12 @@ func TestCheckAndMutateRow_Generic_CloseClient(t *testing.T) {
 
 	// 1. Instantiate the mock server
 	recorder := make(chan *checkAndMutateRowReqRecord, requestRecorderCapacity)
-	actions := make([]*checkAndMutateRowAction, 2 * halfBatchSize)
-	for i := 0; i < 2 * halfBatchSize; i++ {
+	actions := make([]*checkAndMutateRowAction, 2*halfBatchSize)
+	for i := 0; i < 2*halfBatchSize; i++ {
 		// Each request will get a different response.
 		actions[i] = &checkAndMutateRowAction{
 			predicateMatched: predicateMatched[i],
-			delayStr: "2s",
+			delayStr:         "2s",
 		}
 	}
 	server := initMockServer(t)
@@ -273,12 +282,12 @@ func TestCheckAndMutateRow_Generic_CloseClient(t *testing.T) {
 	for i := 0; i < halfBatchSize; i++ {
 		reqsBatchOne[i] = &testproxypb.CheckAndMutateRowRequest{
 			ClientId: clientID,
-			Request: dummyCheckAndMutateRowRequest("table", []byte(rowKeys[i]), predicateMatched[i], 1),
+			Request:  dummyCheckAndMutateRowRequest("table", []byte(rowKeys[i]), predicateMatched[i], 1),
 		}
 		reqsBatchTwo[i] = &testproxypb.CheckAndMutateRowRequest{
-			ClientId:  clientID,
+			ClientId: clientID,
 			Request: dummyCheckAndMutateRowRequest(
-				"table", []byte(rowKeys[i + halfBatchSize]), predicateMatched[i + halfBatchSize], 1),
+				"table", []byte(rowKeys[i+halfBatchSize]), predicateMatched[i+halfBatchSize], 1),
 		}
 	}
 
@@ -296,6 +305,10 @@ func TestCheckAndMutateRow_Generic_CloseClient(t *testing.T) {
 	// 4b. Check that all the batch-one requests succeeded
 	checkResultOkStatus(t, resultsBatchOne...)
 	for i := 0; i < halfBatchSize; i++ {
+		assert.NotNil(t, resultsBatchOne[i].Result)
+		if resultsBatchOne[i].Result == nil {
+			continue
+		}
 		assert.Equal(t, predicateMatched[i], resultsBatchOne[i].Result.PredicateMatched)
 	}
 
@@ -320,7 +333,7 @@ func TestCheckAndMutateRow_Generic_DeadlineExceeded(t *testing.T) {
 	recorder := make(chan *checkAndMutateRowReqRecord, 1)
 	action := &checkAndMutateRowAction{
 		predicateMatched: predicateMatched,
-		delayStr: "10s",
+		delayStr:         "10s",
 	}
 	server := initMockServer(t)
 	server.CheckAndMutateRowFn = mockCheckAndMutateRowFnSimple(recorder, action)
@@ -328,7 +341,7 @@ func TestCheckAndMutateRow_Generic_DeadlineExceeded(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.CheckAndMutateRowRequest{
 		ClientId: t.Name(),
-		Request: dummyCheckAndMutateRowRequest("table", []byte("row-01"), predicateMatched, 2),
+		Request:  dummyCheckAndMutateRowRequest("table", []byte("row-01"), predicateMatched, 2),
 	}
 
 	// 3. Perform the operation via test proxy
@@ -347,4 +360,3 @@ func TestCheckAndMutateRow_Generic_DeadlineExceeded(t *testing.T) {
 	// 4b. Check the DeadlineExceeded error
 	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
-
