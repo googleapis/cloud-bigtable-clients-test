@@ -7,7 +7,7 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/google/go-cmp v0.5.9
 	github.com/stretchr/testify v1.8.4
-	google.golang.org/api v0.143.0
+	google.golang.org/api v0.146.0
 	google.golang.org/genproto v0.0.0-20231002182017-d307bd883b97
 	google.golang.org/genproto/googleapis/api v0.0.0-20231002182017-d307bd883b97
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231002182017-d307bd883b97
