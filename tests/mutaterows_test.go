@@ -291,6 +291,8 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 }
 
 // TestMutateRows_Retry_ExponentialBackoff tests that client will retry using exponential backoff.
+// TODO: as the clients use jitter with different defaults, a correct and reliable check should look
+// at more retry attempts. Before finding the best solution, we drop the check for now.
 func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
 	// 0. Common variables
 	const numRows int = 1
@@ -331,7 +333,7 @@ func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
 	// 4a. Check the number of requests in the recorder
 	assert.Equal(t, numRPCs, len(recorder))
 
-	// 4b. Check the retry delays
+	// 4b. Log the retry delays
 	origReq := <-recorder
 	firstRetry := <-recorder
 	secondRetry := <-recorder
@@ -343,12 +345,7 @@ func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
 
 	// Different clients may have different behaviors, we log the delays for informational purpose.
 	// Example: For the first retry delay, C++ client uses 100ms but Java client uses 10ms.
-	// Java client allows the second delay to be smaller than the first delay but C++ client doesn't.
 	t.Logf("The three retry delays are: %dms, %dms, %dms", firstDelay, secondDelay, thirdDelay)
-
-	// Basic assertions are used, but not all clients can pass them consistently.
-	assert.Less(t, firstDelay, secondDelay)
-	assert.Less(t, secondDelay, thirdDelay)
 }
 
 // TestMutateRows_Generic_MultiStreams tests that client can have multiple concurrent streams.
