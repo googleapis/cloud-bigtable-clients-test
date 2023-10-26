@@ -34,6 +34,8 @@ var proxyAddr = flag.String("proxy_addr", "",
 var printClientReq = flag.Bool("print_client_req", false,
 	"If enabled, server will print its received requests from the client. It helps debugging, "+
 	"but is quite verbose. Default to false.")
+var enableFeaturesAll = flag.Bool("enable_features_all", false,
+	"If enabled, client will enable all the optional features before sending out requests.")
 
 // testProxyClient is the stub used by all the test cases to interact with the test proxy.
 var testProxyClient testproxypb.CloudBigtableV2TestProxyClient
