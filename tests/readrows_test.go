@@ -108,12 +108,7 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 	res := doReadRowsOp(t, server, &req, nil)
 
 	// 4. Check the response (C++ and Java clients have different error messages)
-	// c++ and java
-	if !strings.Contains(res.GetStatus().GetMessage(), "increasing") &&
-		// golang
-		!strings.Contains(res.GetStatus().GetMessage(), "must be > prev row") {
-		t.Errorf("status message missing required subtext")
-	}
+	assert.Contains(t, res.GetStatus().GetMessage(), "increasing")
 	t.Logf("The full error message is: %s", res.GetStatus().GetMessage())
 }
 
@@ -141,12 +136,7 @@ func TestReadRows_NoRetry_OutOfOrderError_Reverse(t *testing.T) {
 	res := doReadRowsOp(t, server, &req, nil)
 
 	// 4. Check the response (C++ and Java clients have different error messages)
-	// c++ and java
-	if !strings.Contains(res.GetStatus().GetMessage(), "decreasing") &&
-		// golang
-		!strings.Contains(res.GetStatus().GetMessage(), "must be < prev row") {
-		t.Errorf("status message missing required subtext")
-	}
+	assert.Contains(t, res.GetStatus().GetMessage(), "decreasing")
 	t.Logf("The full error message is: %s", res.GetStatus().GetMessage())
 }
 
