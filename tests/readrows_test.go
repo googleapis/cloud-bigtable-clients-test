@@ -112,7 +112,7 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 	if !strings.Contains(res.GetStatus().GetMessage(), "increasing") &&
 		// golang
 		!strings.Contains(res.GetStatus().GetMessage(), "must be > prev row") {
-		t.Errorf("status message missing requied subtext")
+		t.Errorf("status message missing required subtext")
 	}
 	t.Logf("The full error message is: %s", res.GetStatus().GetMessage())
 }
@@ -145,7 +145,7 @@ func TestReadRows_NoRetry_OutOfOrderError_Reverse(t *testing.T) {
 	if !strings.Contains(res.GetStatus().GetMessage(), "decreasing") &&
 		// golang
 		!strings.Contains(res.GetStatus().GetMessage(), "must be < prev row") {
-		t.Errorf("status message missing requied subtext")
+		t.Errorf("status message missing required subtext")
 	}
 	t.Logf("The full error message is: %s", res.GetStatus().GetMessage())
 }
@@ -301,7 +301,7 @@ func TestReadRows_Retry_LastScannedRow_Reverse(t *testing.T) {
 	// 3. Perform the operation via test proxy
 	res := doReadRowsOp(t, server, &req, nil)
 
-	// 4a. Verify that rows abar and zbar were read successfully (qfoo doesn't match the filter)
+	// 4a. Verify that rows zbar and abar were read successfully (qfoo doesn't match the filter)
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(res.GetRows()))
 	assert.Equal(t, "zbar", string(res.Rows[0].Key))
