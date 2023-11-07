@@ -58,6 +58,9 @@ func createCbtClient(t *testing.T, clientID string, serverAddr string, opts *cli
 		req.AppProfileId = opts.profile
 		req.PerOperationTimeout = opts.timeout
 	}
+	if *enableFeaturesAll {
+		req.OptionalFeatureConfig = testproxypb.OptionalFeatureConfig_OPTIONAL_FEATURE_CONFIG_ENABLE_ALL
+	}
 
 	_, err := testProxyClient.CreateClient(context.Background(), &req)
 	if err != nil {
