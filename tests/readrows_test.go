@@ -98,7 +98,7 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 	server := initMockServer(t)
 	server.ReadRowsFn = mockReadRowsFnSimple(nil, action)
 
-	// 2. Build the request to test proxyk
+	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
 		ClientId: t.Name(),
 		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
@@ -110,6 +110,36 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 	// 4. Check the response (C++ and Java clients have different error messages)
 	assert.Contains(t, res.GetStatus().GetMessage(), "increasing")
 	t.Logf("The full error message is: %s", res.GetStatus().GetMessage())
+}
+
+func TestReadRows_ReverseScans_FeatureFlag_Enabled(t *testing.T) {
+	// 1. Instantiate the mock server
+	// Don't call mockReadRowsFn() as the behavior is to record metadata of the request
+	mdRecords := make(chan metadata.MD, 1)
+	server := initMockServer(t)
+	server.ReadRowsFn = func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
+		md, _ := metadata.FromIncomingContext(srv.Context())
+		mdRecords <- md
+		return nil
+	}
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table"), Reversed: true},
+	}
+
+	// 3. Perform the operation via test proxy
+	doReadRowsOp(t, server, &req, nil)
+
+	// 4. Check the request headers in the metadata
+	md := <-mdRecords
+
+	ff, err := getClientFeatureFlags(md)
+
+	assert.Nil(t, err, "failed to decode client feature flags")
+
+	assert.True(t, ff.ReverseScans, "client does must enable ReverseScans feature flag")
 }
 
 // TestReadRows_NoRetry_OutOfOrderError_Reverse tests that client will fail on receiving out of order row keys for reverse scans.
