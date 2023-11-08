@@ -98,7 +98,7 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 	server := initMockServer(t)
 	server.ReadRowsFn = mockReadRowsFnSimple(nil, action)
 
-	// 2. Build the request to test proxyk
+	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
 		ClientId: t.Name(),
 		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table")},
@@ -109,6 +109,64 @@ func TestReadRows_NoRetry_OutOfOrderError(t *testing.T) {
 
 	// 4. Check the response (C++ and Java clients have different error messages)
 	assert.Contains(t, res.GetStatus().GetMessage(), "increasing")
+	t.Logf("The full error message is: %s", res.GetStatus().GetMessage())
+}
+
+func TestReadRows_ReverseScans_FeatureFlag_Enabled(t *testing.T) {
+	// 1. Instantiate the mock server
+	// Don't call mockReadRowsFn() as the behavior is to record metadata of the request
+	mdRecords := make(chan metadata.MD, 1)
+	server := initMockServer(t)
+	server.ReadRowsFn = func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
+		md, _ := metadata.FromIncomingContext(srv.Context())
+		mdRecords <- md
+		return nil
+	}
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table"), Reversed: true},
+	}
+
+	// 3. Perform the operation via test proxy
+	doReadRowsOp(t, server, &req, nil)
+
+	// 4. Check the request headers in the metadata
+	md := <-mdRecords
+
+	ff, err := getClientFeatureFlags(md)
+
+	assert.Nil(t, err, "failed to decode client feature flags")
+
+	assert.True(t, ff.ReverseScans, "client does must enable ReverseScans feature flag")
+}
+
+// TestReadRows_NoRetry_OutOfOrderError_Reverse tests that client will fail on receiving out of order row keys for reverse scans.
+func TestReadRows_NoRetry_OutOfOrderError_Reverse(t *testing.T) {
+	// 1. Instantiate the mock server
+	action := &readRowsAction{
+		chunks: []chunkData{
+			dummyChunkData("row-03", "v3", Commit),
+			// The following two rows are in bad order
+			dummyChunkData("row-07", "v7", Commit),
+			dummyChunkData("row-01", "v1", Commit),
+		},
+	}
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFnSimple(nil, action)
+
+	// 2. Build the request to test proxyk
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table"), Reversed: true},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, server, &req, nil)
+
+	// 4. Check the response (C++ and Java clients have different error messages)
+	assert.Contains(t, res.GetStatus().GetMessage(), "decreasing")
 	t.Logf("The full error message is: %s", res.GetStatus().GetMessage())
 }
 
@@ -233,6 +291,51 @@ func TestReadRows_Retry_LastScannedRow(t *testing.T) {
 		assert.Empty(t, loggedReq.req.GetRows().GetRowRanges()[0])
 	}
 	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("qfoo")}))
+}
+
+// TestReadRows_Retry_LastScannedRow_Reverse tests that client will resume from last scan row key when reverse scanning.
+func TestReadRows_Retry_LastScannedRow_Reverse(t *testing.T) {
+	// 1. Instantiate the mock server
+	recorder := make(chan *readRowsReqRecord, 2)
+	sequence := []*readRowsAction{
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("zbar", "v_z", Commit)}},
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("qfoo", "v_q", Drop)}}, // Chunkless response due to Drop
+		&readRowsAction{rpcError: codes.Unavailable}, // A retry-able error
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("abar", "v_a", Commit)}},
+	}
+	server := initMockServer(t)
+	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request:  &btpb.ReadRowsRequest{TableName: buildTableName("table"), Reversed: true},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, server, &req, nil)
+
+	// 4a. Verify that rows zbar and abar were read successfully (qfoo doesn't match the filter)
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(res.GetRows()))
+	assert.Equal(t, "zbar", string(res.Rows[0].Key))
+	assert.Equal(t, "abar", string(res.Rows[1].Key))
+
+	// 4b. Verify that client sent the retry request properly
+	loggedReq := <-recorder
+	loggedRetry := <-recorder
+	if len(loggedReq.req.GetRows().GetRowRanges()) > 0 {
+		// Some clients such as Node.js may add an empty row range to the row range list.
+		assert.Equal(t, 1, len(loggedReq.req.GetRows().GetRowRanges()))
+		assert.Empty(t, loggedReq.req.GetRows().GetRowRanges()[0])
+	}
+	assert.True(t, cmp.Equal(loggedRetry.req.GetRows().GetRowRanges()[0].EndKey, &btpb.RowRange_EndKeyOpen{EndKeyOpen: []byte("qfoo")}))
 }
 
 // TestReadRows_Generic_MultiStreams tests that client can have multiple concurrent streams.
@@ -517,6 +620,7 @@ func TestReadRows_NoRetry_ClosedStartUnspecifiedEnd(t *testing.T) {
 	assert.Len(t, res.Rows, 2)
 }
 
+// todo reverse scan version
 // TestReadRows_NoRetry_OpenEndUnspecifiedStart tests that the client can request
 // a row range with an open end key and no start key.
 func TestReadRows_NoRetry_OpenEndUnspecifiedStart(t *testing.T) {

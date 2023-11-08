@@ -16,6 +16,7 @@ package tests
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"math"
 	"sync"
@@ -24,7 +25,10 @@ import (
 
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
+	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 // Constants for CBT server and resources
@@ -172,7 +176,7 @@ func doReadRowOpsCore(
 	t *testing.T,
 	clientID string,
 	reqs []*testproxypb.ReadRowRequest,
-        closeCbtClientAfter *time.Duration) []*testproxypb.RowResult {
+	closeCbtClientAfter *time.Duration) []*testproxypb.RowResult {
 
 	validateClientID(t, reqs, clientID)
 
@@ -602,20 +606,38 @@ func checkRequestsAreWithin[R anyRecord](t *testing.T, periodMillisec int, recor
 	maxTsMs := int64(math.MinInt64)
 	close(records)
 	for {
-		loggedReq, more := <- records
+		loggedReq, more := <-records
 		if !more {
 			break
 		}
 
 		ts := loggedReq.GetTs().UnixMilli()
-		if (minTsMs > ts) {
+		if minTsMs > ts {
 			minTsMs = ts
 		}
-		if (maxTsMs < ts) {
+		if maxTsMs < ts {
 			maxTsMs = ts
 		}
 	}
-	t.Logf("The requests were received within %dms", maxTsMs - minTsMs)
-	assert.Less(t, maxTsMs - minTsMs, int64(periodMillisec))
+	t.Logf("The requests were received within %dms", maxTsMs-minTsMs)
+	assert.Less(t, maxTsMs-minTsMs, int64(periodMillisec))
 }
 
+func getClientFeatureFlags(md metadata.MD) (ff *btpb.FeatureFlags, err error) {
+	featuresMd := md["bigtable-features"]
+	if len(featuresMd) != 1 {
+		err = fmt.Errorf("bigtable-features metadata missing")
+		return ff, err
+	}
+
+	featuresBytes, err := base64.URLEncoding.DecodeString(featuresMd[0])
+
+	if err != nil {
+		return ff, err
+	}
+
+	ff = &btpb.FeatureFlags{}
+	err = proto.Unmarshal(featuresBytes, ff)
+
+	return ff, err
+}
