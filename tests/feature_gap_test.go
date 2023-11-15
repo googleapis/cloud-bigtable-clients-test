@@ -27,6 +27,8 @@ import (
 )
 
 // TestFeatureGap tests that all the optional features of Cloud Bigtable clients are truly enabled.
+// Note: the test expects that an enabled feature flag to be added to the header of EVERY RPC call,
+// even if the feature is not exercised.
 func TestFeatureGap(t *testing.T) {
 	if !*enableFeaturesAll {
 		t.Logf("Skip the check as --enable_features_all is false")
@@ -74,16 +76,13 @@ func TestFeatureGap(t *testing.T) {
 	}
 	t.Logf("Parsed feature flags: %s", featureProto)
 
-	// 5. Check the featureProto to ensure every boolean field is set to true
-	enabled := true
+	// 5. Check the featureProto to see if every feature is truly enabled.
 	fields := featureProto.ProtoReflect().Descriptor().Fields()
 	for i := 0; i < fields.Len(); i++ {
 		field := fields.Get(i)
-		value := featureProto.ProtoReflect().Get(field)
-		if field.Kind() == protoreflect.BoolKind && !value.Bool() {
-			enabled = false
-			t.Logf("field %s is not enabled", field.Name())
-		}
+		t.Run(field.TextName(), func(t *testing.T) {
+			value := featureProto.ProtoReflect().Get(field)
+			assert.True(t, field.Kind() != protoreflect.BoolKind || value.Bool(), "boolean feature flag is not enabled")
+		})
 	}
-	assert.True(t, enabled, "Not all the features are truly enabled")
 }
