@@ -3,7 +3,7 @@ module github.com/googleapis/cloud-bigtable-clients-test
 go 1.19
 
 require (
-	cloud.google.com/go/bigtable v1.20.0
+	cloud.google.com/go/bigtable v1.21.0
 	github.com/golang/protobuf v1.5.3
 	github.com/google/go-cmp v0.6.0
 	github.com/stretchr/testify v1.8.4
