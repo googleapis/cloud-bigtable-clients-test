@@ -96,6 +96,7 @@ type readRowsAction struct {
 	chunks   []chunkData
 	rpcError codes.Code
 	delayStr string  // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	routingCookie string
 }
 func (a *readRowsAction) Validate() {
 	for _, chunk := range a.chunks {
