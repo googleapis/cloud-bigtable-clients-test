@@ -91,11 +91,14 @@ type chunkData struct {
 //     Effect: server will return an error. chunks that are specified in the same action will be ignored.
 //  4. readRowsAction{rpcError: error, delayStr: delay}
 //     Effect: server will return an error after delay. chunks that are specified in the same action will be ignored.
-//  5. To have a response stream with/without errors, a sequence of actions should be constructed.
+//  5. readRowsAction{rpcError: error, routingCookie: cookie}
+//     Effect: server will return an error with the routing cookie. Retry attempt header should have this cookie.
+//  6. To have a response stream with/without errors, a sequence of actions should be constructed.
 type readRowsAction struct {
-	chunks   []chunkData
-	rpcError codes.Code
-	delayStr string  // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	chunks        []chunkData
+	rpcError      codes.Code
+	delayStr      string  // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	routingCookie string
 }
 func (a *readRowsAction) Validate() {
 	for _, chunk := range a.chunks {

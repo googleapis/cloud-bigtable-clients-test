@@ -26,6 +26,7 @@ import (
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	gs "google.golang.org/grpc/status"
 )
 
@@ -117,12 +118,16 @@ func mockReadRowsFnSimple(recorder chan<- *readRowsReqRecord, actions ...*readRo
 	return mockReadRowsFn(recorder, actionSequences...)
 }
 
+func mockReadRowsFn(recorder chan<- *readRowsReqRecord, actionSequences ...[]*readRowsAction) func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error {
+	return mockReadRowsFnWithMetadata(recorder, nil, actionSequences...)
+}
+
 // mockReadRowsFn returns a mock implementation of server-side ReadRows(). The behavior is
 // customized by `actionSequences`. Non-nil `recorder` will be used to log the requests
 // (including retries) received by the server in time order, up to its capacity.
 // For concurrency testing, each request MUST have prefix "opX-" in the row key(s), indicating
 // that the X-th (zero based) actionSequence will be used to serve the request.
-func mockReadRowsFn(recorder chan<- *readRowsReqRecord, actionSequences ...[]*readRowsAction) func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error {
+func mockReadRowsFnWithMetadata(recorder chan<- *readRowsReqRecord, mdRecorder chan metadata.MD, actionSequences ...[]*readRowsAction) func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error {
 	// Build the map so that server can retrieve the proper action queue by key "opX-".
 	opIDToActionQueue := make(map[string]chan *readRowsAction)
 	buildActionMap(opIDToActionQueue, actionSequences)
@@ -130,6 +135,12 @@ func mockReadRowsFn(recorder chan<- *readRowsReqRecord, actionSequences ...[]*re
 	return func(req *btpb.ReadRowsRequest, srv btpb.Bigtable_ReadRowsServer) error {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
+		}
+
+		// Record the metadata
+		if (mdRecorder != nil) {
+			md, _ := metadata.FromIncomingContext(srv.Context())
+			mdRecorder <- md
 		}
 
 		// Record the request
@@ -161,6 +172,11 @@ func mockReadRowsFn(recorder chan<- *readRowsReqRecord, actionSequences ...[]*re
 			sleepFor(action.delayStr)
 
 			if action.rpcError != codes.OK {
+				if action.routingCookie != "" {
+					// add routing cookie to metadata
+					trailer := metadata.Pairs("x-goog-cbt-cookie-test", action.routingCookie)
+					srv.SetTrailer(trailer)
+				}
 				return gs.Error(action.rpcError, "ReadRows failed")
 			}
 

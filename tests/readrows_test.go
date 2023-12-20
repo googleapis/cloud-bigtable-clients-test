@@ -790,3 +790,55 @@ func TestReadRows_Generic_DeadlineExceeded(t *testing.T) {
 		assert.Contains(t, strings.ToLower(strings.ReplaceAll(msg, " ", "")), "deadlineexceeded")
 	}
 }
+
+// TestReadRows_Retry_WithRoutingCookie tests that routing cookie is handled correctly by the client.
+func TestReadRows_Retry_WithRoutingCookie(t *testing.T) {
+	// 0. Common variable
+	cookie := "test-cookie"
+
+	// 1. Instantiate the mock server
+	sequence := []*readRowsAction{
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("row-01", "v1", Commit)}},
+		&readRowsAction{rpcError: codes.Unavailable, routingCookie: cookie}, // Error with a routing cookie
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("row-05", "v5", Commit)}},
+	}
+	server := initMockServer(t)
+
+	mdRecords := make(chan metadata.MD, 2)
+	recorder := make(chan *readRowsReqRecord, 2)
+	server.ReadRowsFn = mockReadRowsFnWithMetadata(recorder, mdRecords, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ReadRowsRequest{
+			TableName: buildTableName("table"),
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, server, &req, nil)
+
+	// 4a. Verify that the read succeeds
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(res.GetRows()))
+	assert.Equal(t, "row-01", string(res.Rows[0].Key))
+	assert.Equal(t, "row-05", string(res.Rows[1].Key))
+
+	// 4b. Verify routing cookie is seen
+	// Ignore the first metadata which won't have the routing cookie
+	var _ = <-mdRecords
+	// second metadata which comes from the retry attempt should have a routing cookie field
+	md1 := <-mdRecords
+	val := md1["x-goog-cbt-cookie-test"]
+	assert.Equal(t, cookie, val[0])
+
+	// 4c. Verify retry request is correct
+	var _ = <-recorder
+	retryReq := <-recorder
+	assert.True(t, cmp.Equal(retryReq.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("row-01")}))
+}
