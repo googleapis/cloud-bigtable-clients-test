@@ -26,8 +26,8 @@ import (
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
-	gs "google.golang.org/grpc/status"
 	"google.golang.org/grpc/metadata"
+	gs "google.golang.org/grpc/status"
 )
 
 var rowKeyPrefixRegex = regexp.MustCompile("^op[0-9]+-")
@@ -120,10 +120,6 @@ func mockReadRowsFnSimple(recorder chan<- *readRowsReqRecord, actions ...*readRo
 
 func mockReadRowsFn(recorder chan<- *readRowsReqRecord, actionSequences ...[]*readRowsAction) func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error {
 	return mockReadRowsFnWithMetadata(recorder, nil, actionSequences...)
-}
-
-func mockReadRowsMetadataFn(mdRecorder chan metadata.MD, actionSequences ...[]*readRowsAction) func(*btpb.ReadRowsRequest, btpb.Bigtable_ReadRowsServer) error {
-	return mockReadRowsFnWithMetadata(nil, mdRecorder, actionSequences...)
 }
 
 // mockReadRowsFn returns a mock implementation of server-side ReadRows(). The behavior is

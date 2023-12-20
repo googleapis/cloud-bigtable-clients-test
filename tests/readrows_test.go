@@ -791,7 +791,7 @@ func TestReadRows_Generic_DeadlineExceeded(t *testing.T) {
 	}
 }
 
-
+// TestReadRows_Generic_RetryWithRoutingCookie tests that routing cookie is handled correctly by the client.
 func TestReadRows_Generic_RetryWithRoutingCookie(t *testing.T) {
 	// 0. Common variable
 	cookie := "test-cookie"
@@ -809,8 +809,8 @@ func TestReadRows_Generic_RetryWithRoutingCookie(t *testing.T) {
 	server := initMockServer(t)
 
 	mdRecords := make(chan metadata.MD, 2)
-
-	server.ReadRowsFn = mockReadRowsMetadataFn(mdRecords, sequence)
+	recorder := make(chan *readRowsReqRecord, 2)
+	server.ReadRowsFn = mockReadRowsFnWithMetadata(recorder, mdRecords, sequence)
 
 	// 2. Build the request to test proxy
 	req := testproxypb.ReadRowsRequest{
@@ -836,4 +836,9 @@ func TestReadRows_Generic_RetryWithRoutingCookie(t *testing.T) {
 	md1 := <-mdRecords
 	val := md1["x-goog-cbt-cookie-test"]
 	assert.Equal(t, cookie, val[0])
+
+	// 4c. Verify retry request is correct
+	var _ = <-recorder
+	retryReq := <-recorder
+	assert.True(t, cmp.Equal(retryReq.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("row-01")}))
 }
