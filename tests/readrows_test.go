@@ -791,7 +791,7 @@ func TestReadRows_Generic_DeadlineExceeded(t *testing.T) {
 	}
 }
 
-// TestReadRows_Generic_RetryWithRoutingCookie tests that routing cookie is handled correctly by the client.
+// TestReadRows_Retry_WithRoutingCookie tests that routing cookie is handled correctly by the client.
 func TestReadRows_Retry_WithRoutingCookie(t *testing.T) {
 	// 0. Common variable
 	cookie := "test-cookie"
