@@ -171,8 +171,6 @@ func mockReadRowsFnWithMetadata(recorder chan<- *readRowsReqRecord, mdRecorder c
 			}
 			sleepFor(action.delayStr)
 
-			// TODO: for retry info, we can use gs.ErrorProto(Status) where Status has a ErrorDetails
-			// https://pkg.go.dev/google.golang.org/grpc/status#ErrorProto
 			if action.rpcError != codes.OK {
 				if action.routingCookie != "" {
 					// add routing cookie to metadata
