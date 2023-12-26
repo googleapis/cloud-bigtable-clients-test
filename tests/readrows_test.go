@@ -842,3 +842,49 @@ func TestReadRows_Retry_WithRoutingCookie(t *testing.T) {
 	retryReq := <-recorder
 	assert.True(t, cmp.Equal(retryReq.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("row-01")}))
 }
+
+// TestReadRows_Retry_WithRetryInfo tests that RetryInfo is handled correctly by the client.
+func TestReadRows_Retry_WithRetryInfo(t *testing.T) {
+	// 1. Instantiate the mock server
+	sequence := []*readRowsAction{
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("row-01", "v1", Commit)}},
+		&readRowsAction{rpcError: codes.Unavailable, retryInfo: "2s"}, // Error with retry info
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("row-05", "v5", Commit)}},
+	}
+	server := initMockServer(t)
+
+	recorder := make(chan *readRowsReqRecord, 2)
+	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ReadRowsRequest{
+			TableName: buildTableName("table"),
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowsOp(t, server, &req, nil)
+
+	// 4a. Verify that the read succeeds
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(res.GetRows()))
+	assert.Equal(t, "row-01", string(res.Rows[0].Key))
+	assert.Equal(t, "row-05", string(res.Rows[1].Key))
+
+	// 4b. Verify retry request is correct
+	firstReq := <-recorder
+	retryReq := <-recorder
+	assert.True(t, cmp.Equal(retryReq.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("row-01")}))
+
+	// 4c. Verify retry backoff time is correct
+	firstReqTs := firstReq.ts.Unix()
+	retryReqTs := retryReq.ts.Unix()
+
+	assert.True(t, retryReqTs - firstReqTs >= 2)
+}
