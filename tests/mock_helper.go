@@ -24,10 +24,12 @@ import (
 
 	"github.com/golang/protobuf/ptypes/wrappers"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	gs "google.golang.org/grpc/status"
+	drpb "google.golang.org/protobuf/types/known/durationpb"
 )
 
 var rowKeyPrefixRegex = regexp.MustCompile("^op[0-9]+-")
@@ -176,6 +178,16 @@ func mockReadRowsFnWithMetadata(recorder chan<- *readRowsReqRecord, mdRecorder c
 					// add routing cookie to metadata
 					trailer := metadata.Pairs("x-goog-cbt-cookie-test", action.routingCookie)
 					srv.SetTrailer(trailer)
+				}
+				// TODO check for feature flag
+				if action.retryInfo != "" {
+					st := gs.New(action.rpcError, "ReadRows failed")
+					delay, _ := time.ParseDuration(action.retryInfo)
+					retryInfo := &errdetails.RetryInfo{
+						RetryDelay: drpb.New(delay),
+					}
+					st, err = st.WithDetails(retryInfo)
+					return st.Err()
 				}
 				return gs.Error(action.rpcError, "ReadRows failed")
 			}
