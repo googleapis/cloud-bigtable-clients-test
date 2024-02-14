@@ -1011,3 +1011,44 @@ func TestReadRows_Retry_WithRetryInfo_MultipleErrorResponse(t *testing.T) {
 	// default initial retry delay is less than 10ms
 	assert.True(t, retryReq2Ts - retryReq1Ts <= 10)
 }
+
+// TestReadRows_Retry_WithRetryInfo tests that RetryInfo is handled correctly by the client.
+// The overall deadline set on the client is still respected.
+func TestReadRows_Retry_WithRetryInfo_OverallDedaline(t *testing.T) {
+	// 1. Instantiate the mock server
+	sequence := []*readRowsAction{
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("row-01", "v1", Commit)}},
+		&readRowsAction{rpcError: codes.Unavailable, retryInfo: "2s"},
+		&readRowsAction{rpcError: codes.Unavailable, retryInfo: "6s"},
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("row-05", "v5", Commit)}},
+	}
+	server := initMockServer(t)
+
+	// There should only be 2 attempts due to the effect of client side timeout
+	recorder := make(chan *readRowsReqRecord, 2)
+	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowsRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ReadRowsRequest{
+			TableName: buildTableName("table"),
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	opts := clientOpts{
+		timeout: &durationpb.Duration{Seconds: 3},
+	}
+	doReadRowsOp(t, server, &req, &opts)
+
+	// 4a. Check the runtime
+	curTs := time.Now()
+	loggedReq := <-recorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
+	assert.Less(t, runTimeSecs, 4) // 4s is much smaller than combined retry delay indicates timeout takes effect.
+}
