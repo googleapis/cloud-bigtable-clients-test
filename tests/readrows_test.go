@@ -1028,7 +1028,7 @@ func TestReadRows_Retry_WithRetryInfo_OverallDedaline(t *testing.T) {
 	}
 	server := initMockServer(t)
 
-	// There should only be 2 attempts
+	// There should only be 2 attempts due to the effect of client side timeout
 	recorder := make(chan *readRowsReqRecord, 2)
 	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
 
@@ -1050,5 +1050,5 @@ func TestReadRows_Retry_WithRetryInfo_OverallDedaline(t *testing.T) {
 	curTs := time.Now()
 	loggedReq := <-recorder
 	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
-	assert.Less(t, runTimeSecs, 8) // 8s (smaller than combined retry delay time) indicates timeout takes effect.
+	assert.Less(t, runTimeSecs, 4) // 4s is much smaller than combined retry delay indicates timeout takes effect.
 }
