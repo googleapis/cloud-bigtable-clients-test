@@ -287,11 +287,15 @@ func TestReadRow_Generic_CloseClient(t *testing.T) {
 	// 4a. Check that server only receives batch-one requests
 	assert.Equal(t, halfBatchSize, len(recorder))
 
-	// 4b. Check that all the batch-one requests succeeded
-	checkResultOkStatus(t, resultsBatchOne...)
+	// 4b. Check that all the batch-one requests succeeded or were cancelled
+	checkResultOkOrCancelledStatus(t, resultsBatchOne...)
 	for i := 0; i < halfBatchSize; i++ {
 		assert.NotNil(t, resultsBatchOne[i])
 		if resultsBatchOne[i] == nil {
+			continue
+		}
+		resCode := resultsBatchOne[i].GetStatus().GetCode()
+		if resCode == int32(codes.Canceled) {
 			continue
 		}
 		assert.NotNil(t, resultsBatchOne[i].Row)

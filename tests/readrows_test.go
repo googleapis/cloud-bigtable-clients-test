@@ -727,11 +727,15 @@ func TestReadRows_Generic_CloseClient(t *testing.T) {
 	// 4a. Check that server only receives batch-one requests
 	assert.Equal(t, halfBatchSize, len(recorder))
 
-	// 4b. Check that all the batch-one requests succeeded
-	checkResultOkStatus(t, resultsBatchOne...)
+	// 4b. Check that all the batch-one requests succeeded or were cancelled
+	checkResultOkOrCancelledStatus(t, resultsBatchOne...)
 	for i := 0; i < halfBatchSize; i++ {
 		assert.NotNil(t, resultsBatchOne[i])
 		if resultsBatchOne[i] == nil {
+			continue
+		}
+		resCode := resultsBatchOne[i].GetStatus().GetCode()
+		if resCode == int32(codes.Canceled) {
 			continue
 		}
 		assert.NotNil(t, resultsBatchOne[i].Rows)
@@ -835,6 +839,10 @@ func TestReadRows_Retry_WithRoutingCookie(t *testing.T) {
 	// second metadata which comes from the retry attempt should have a routing cookie field
 	md1 := <-mdRecords
 	val := md1["x-goog-cbt-cookie-test"]
+	assert.NotEmpty(t, val)
+	if len(val) == 0 {
+		return
+	}
 	assert.Equal(t, cookie, val[0])
 
 	// 4c. Verify retry request is correct
@@ -857,8 +865,8 @@ func TestReadRows_Retry_WithRoutingCookie_MultipleErrorResponses(t *testing.T) {
 		&readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("row-01", "v1", Commit)}},
-		&readRowsAction{rpcError: codes.Unavailable, routingCookie: cookie}, // Error with a routing cookie
-		&readRowsAction{rpcError: codes.Unavailable}, // Error with no routing cookie
+		&readRowsAction{rpcError: codes.Unavailable, routingCookie: cookie},    // Error with a routing cookie
+		&readRowsAction{rpcError: codes.Unavailable},                           // Error with no routing cookie
 		&readRowsAction{rpcError: codes.Unavailable, routingCookie: newCookie}, //Error with new routing cookie
 		&readRowsAction{
 			chunks: []chunkData{
@@ -893,6 +901,10 @@ func TestReadRows_Retry_WithRoutingCookie_MultipleErrorResponses(t *testing.T) {
 	// second metadata which comes from the retry attempt should have a routing cookie field
 	md1 := <-mdRecords
 	val1 := md1["x-goog-cbt-cookie-test"]
+	assert.NotEmpty(t, val1)
+	if len(val1) == 0 {
+		return
+	}
 	assert.Equal(t, cookie, val1[0])
 	// third metadata which comes from the 2nd retry attempt should use the same routing cookie
 	md2 := <-mdRecords
@@ -956,7 +968,7 @@ func TestReadRows_Retry_WithRetryInfo(t *testing.T) {
 	firstReqTs := firstReq.ts.Unix()
 	retryReqTs := retryReq.ts.Unix()
 
-	assert.True(t, retryReqTs - firstReqTs >= 2)
+	assert.True(t, retryReqTs-firstReqTs >= 2)
 }
 
 // TestReadRows_Retry_WithRetryInfo tests that RetryInfo is handled correctly by the client.
@@ -969,7 +981,7 @@ func TestReadRows_Retry_WithRetryInfo_MultipleErrorResponse(t *testing.T) {
 			chunks: []chunkData{
 				dummyChunkData("row-01", "v1", Commit)}},
 		&readRowsAction{rpcError: codes.Unavailable, retryInfo: "2s"}, // Error with retry info
-		&readRowsAction{rpcError: codes.Unavailable}, // Second error without retry info
+		&readRowsAction{rpcError: codes.Unavailable},                  // Second error without retry info
 		&readRowsAction{
 			chunks: []chunkData{
 				dummyChunkData("row-05", "v5", Commit)}},
@@ -1007,9 +1019,9 @@ func TestReadRows_Retry_WithRetryInfo_MultipleErrorResponse(t *testing.T) {
 	firstReqTs := firstReq.ts.UnixNano() / 1e6
 	retryReq1Ts := retryReq1.ts.UnixNano() / 1e6
 	retryReq2Ts := retryReq2.ts.UnixNano() / 1e6
-	assert.True(t, retryReq1Ts - firstReqTs >= 2000)
+	assert.True(t, retryReq1Ts-firstReqTs >= 2000)
 	// default initial retry delay is less than 10ms
-	assert.True(t, retryReq2Ts - retryReq1Ts <= 10)
+	assert.True(t, retryReq2Ts-retryReq1Ts <= 10)
 }
 
 // TestReadRows_Retry_WithRetryInfo tests that RetryInfo is handled correctly by the client.

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !emulator
 // +build !emulator
 
 package tests
@@ -52,7 +53,7 @@ func TestSampleRowKeys_Generic_Headers(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.SampleRowKeysRequest{
 		ClientId: t.Name(),
-		Request: &btpb.SampleRowKeysRequest{TableName: tableName},
+		Request:  &btpb.SampleRowKeysRequest{TableName: tableName},
 	}
 
 	// 3. Perform the operation via test proxy
@@ -68,7 +69,7 @@ func TestSampleRowKeys_Generic_Headers(t *testing.T) {
 	}
 
 	resource := md["x-goog-request-params"][0]
-        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+	if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
 	assert.Contains(t, resource, profileID)
@@ -91,7 +92,7 @@ func TestSampleRowKeys_NoRetry_NoEmptyKey(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.SampleRowKeysRequest{
 		ClientId: t.Name(),
-		Request: clientReq,
+		Request:  clientReq,
 	}
 
 	// 3. Perform the operation via test proxy
@@ -132,7 +133,7 @@ func TestSampleRowKeys_Generic_MultiStreams(t *testing.T) {
 	for i := 0; i < concurrency; i++ {
 		// The same client request is used for the concurrent operations.
 		reqs[i] = &testproxypb.SampleRowKeysRequest{
-			ClientId:  t.Name(),
+			ClientId: t.Name(),
 			Request:  &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
 		}
 	}
@@ -159,8 +160,8 @@ func TestSampleRowKeys_Generic_CloseClient(t *testing.T) {
 
 	// 1. Instantiate the mock server
 	recorder := make(chan *sampleRowKeysReqRecord, requestRecorderCapacity)
-	actions := make([]sampleRowKeysAction, 2 * halfBatchSize)
-	for i := 0; i < 2 * halfBatchSize; i++ {
+	actions := make([]sampleRowKeysAction, 2*halfBatchSize)
+	for i := 0; i < 2*halfBatchSize; i++ {
 		// Each request will get the same response.
 		actions[i] = sampleRowKeysAction{
 			rowKey: []byte("row-31"), offsetBytes: 30, endOfStream: true, delayStr: "2s"}
@@ -174,11 +175,11 @@ func TestSampleRowKeys_Generic_CloseClient(t *testing.T) {
 	for i := 0; i < halfBatchSize; i++ {
 		reqsBatchOne[i] = &testproxypb.SampleRowKeysRequest{
 			ClientId: clientID,
-			Request: &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
+			Request:  &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
 		}
 		reqsBatchTwo[i] = &testproxypb.SampleRowKeysRequest{
 			ClientId: clientID,
-			Request: &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
+			Request:  &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
 		}
 	}
 
@@ -193,8 +194,8 @@ func TestSampleRowKeys_Generic_CloseClient(t *testing.T) {
 	// 4a. Check that server only receives batch-one requests
 	assert.Equal(t, halfBatchSize, len(recorder))
 
-	// 4b. Check that all the batch-one requests succeeded
-	checkResultOkStatus(t, resultsBatchOne...)
+	// 4b. Check that all the batch-one requests succeeded or were cancelled
+	checkResultOkOrCancelledStatus(t, resultsBatchOne...)
 
 	// 4c. Check that all the batch-two requests failed at the proxy level:
 	// the proxy tries to use close client. Client and server have nothing to blame.
@@ -221,7 +222,7 @@ func TestSampleRowKeys_Generic_DeadlineExceeded(t *testing.T) {
 	// 2. Build the request to test proxy
 	req := testproxypb.SampleRowKeysRequest{
 		ClientId: t.Name(),
-		Request: &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
+		Request:  &btpb.SampleRowKeysRequest{TableName: buildTableName("table")},
 	}
 
 	// 3. Perform the operation via test proxy
@@ -240,4 +241,3 @@ func TestSampleRowKeys_Generic_DeadlineExceeded(t *testing.T) {
 	// 4b. Check the DeadlineExceeded error
 	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
-

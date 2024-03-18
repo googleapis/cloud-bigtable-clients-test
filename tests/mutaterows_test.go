@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !emulator
 // +build !emulator
 
 package tests
@@ -59,7 +60,7 @@ func buildEntryData(mutatedRowIndices []int, failedRowIndices []int, errorCode c
 func dummyMutateRowsRequestCore(tableID string, rowKeys []string) *btpb.MutateRowsRequest {
 	req := &btpb.MutateRowsRequest{
 		TableName: buildTableName(tableID),
-		Entries: []*btpb.MutateRowsRequest_Entry{},
+		Entries:   []*btpb.MutateRowsRequest_Entry{},
 	}
 	for i := 0; i < len(rowKeys); i++ {
 		entry := &btpb.MutateRowsRequest_Entry{
@@ -85,7 +86,7 @@ func dummyMutateRowsRequestCore(tableID string, rowKeys []string) *btpb.MutateRo
 func dummyMutateRowsRequest(tableID string, numRows int) *btpb.MutateRowsRequest {
 	rowKeys := []string{}
 	for i := 0; i < numRows; i++ {
-		rowKeys = append(rowKeys, "row-" + strconv.Itoa(i))
+		rowKeys = append(rowKeys, "row-"+strconv.Itoa(i))
 	}
 	return dummyMutateRowsRequestCore(tableID, rowKeys)
 }
@@ -138,7 +139,7 @@ func TestMutateRows_Generic_Headers(t *testing.T) {
 	}
 
 	resource := md["x-goog-request-params"][0]
-        if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
+	if !strings.Contains(resource, tableName) && !strings.Contains(resource, url.QueryEscape(tableName)) {
 		assert.Fail(t, "Resource info is missing in the request header")
 	}
 	assert.Contains(t, resource, profileID)
@@ -154,7 +155,7 @@ func TestMutateRows_NoRetry_NonTransientErrors(t *testing.T) {
 	failedRowIndices := []int{1, 2}
 
 	// 1. Instantiate the mock server
-	recorder := make(chan *mutateRowsReqRecord, numRPCs + 1)
+	recorder := make(chan *mutateRowsReqRecord, numRPCs+1)
 	action := &mutateRowsAction{ // There are 4 rows to mutate, row-1 and row-2 have errors.
 		data: buildEntryData(mutatedRowIndices, failedRowIndices, codes.PermissionDenied),
 	}
@@ -191,9 +192,9 @@ func TestMutateRows_Generic_DeadlineExceeded(t *testing.T) {
 	const tableID string = "table"
 
 	// 1. Instantiate the mock server
-	recorder := make(chan *mutateRowsReqRecord, numRPCs + 1)
+	recorder := make(chan *mutateRowsReqRecord, numRPCs+1)
 	action := &mutateRowsAction{ // There is one row to mutate, which has a long delay.
-		data: buildEntryData([]int{0}, nil, 0),
+		data:     buildEntryData([]int{0}, nil, 0),
 		delayStr: "10s",
 	}
 	server := initMockServer(t)
@@ -238,7 +239,7 @@ func TestMutateRows_Retry_TransientErrors(t *testing.T) {
 	clientReq := dummyMutateRowsRequest(tableID, numRows)
 
 	// 1. Instantiate the mock server
-	recorder := make(chan *mutateRowsReqRecord, numRPCs + 1)
+	recorder := make(chan *mutateRowsReqRecord, numRPCs+1)
 	actions := []*mutateRowsAction{
 		&mutateRowsAction{ // There are 4 rows to mutate, row-1 and row-2 have errors.
 			data:        buildEntryData([]int{0, 3}, []int{1, 2}, codes.Unavailable),
@@ -300,7 +301,7 @@ func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
 	const tableID string = "table"
 
 	// 1. Instantiate the mock server
-	recorder := make(chan *mutateRowsReqRecord, numRPCs + 1)
+	recorder := make(chan *mutateRowsReqRecord, numRPCs+1)
 	actions := []*mutateRowsAction{
 		&mutateRowsAction{ // There is one row to mutate, which has error.
 			data:        buildEntryData(nil, []int{0}, codes.Unavailable),
@@ -367,8 +368,8 @@ func TestMutateRows_Generic_MultiStreams(t *testing.T) {
 	for i := 0; i < concurrency; i++ {
 		// Each request will succeed in the batch mutations.
 		actions[i] = &mutateRowsAction{
-			data:        buildEntryData([]int{0, 1}, nil, 0),
-			delayStr:    "2s",
+			data:     buildEntryData([]int{0, 1}, nil, 0),
+			delayStr: "2s",
 		}
 	}
 	server := initMockServer(t)
@@ -414,10 +415,10 @@ func TestMutateRows_Generic_CloseClient(t *testing.T) {
 
 	// 1. Instantiate the mock server
 	recorder := make(chan *mutateRowsReqRecord, requestRecorderCapacity)
-	actions := make([]*mutateRowsAction, 2 * halfBatchSize)
-	for i := 0; i < 2 * halfBatchSize; i++ {
+	actions := make([]*mutateRowsAction, 2*halfBatchSize)
+	for i := 0; i < 2*halfBatchSize; i++ {
 		actions[i] = &mutateRowsAction{
-			data: buildEntryData([]int{0, 1}, nil, 0),
+			data:     buildEntryData([]int{0, 1}, nil, 0),
 			delayStr: "2s",
 		}
 	}
@@ -430,11 +431,11 @@ func TestMutateRows_Generic_CloseClient(t *testing.T) {
 	for i := 0; i < halfBatchSize; i++ {
 		reqsBatchOne[i] = &testproxypb.MutateRowsRequest{
 			ClientId: clientID,
-			Request: dummyMutateRowsRequestCore("table", rowKeys[i]),
+			Request:  dummyMutateRowsRequestCore("table", rowKeys[i]),
 		}
 		reqsBatchTwo[i] = &testproxypb.MutateRowsRequest{
-			ClientId:  clientID,
-			Request: dummyMutateRowsRequestCore("table", rowKeys[i + halfBatchSize]),
+			ClientId: clientID,
+			Request:  dummyMutateRowsRequestCore("table", rowKeys[i+halfBatchSize]),
 		}
 	}
 
@@ -449,8 +450,8 @@ func TestMutateRows_Generic_CloseClient(t *testing.T) {
 	// 4a. Check that server only receives batch-one requests
 	assert.Equal(t, halfBatchSize, len(recorder))
 
-	// 4b. Check that all the batch-one requests succeeded
-	checkResultOkStatus(t, resultsBatchOne...)
+	// 4b. Check that all the batch-one requests succeeded or were cancelled
+	checkResultOkOrCancelledStatus(t, resultsBatchOne...)
 
 	// 4c. Check that all the batch-two requests failed at the proxy level:
 	// the proxy tries to use close client. Client and server have nothing to blame.

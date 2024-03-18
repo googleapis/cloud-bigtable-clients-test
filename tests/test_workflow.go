@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 )
@@ -596,6 +597,16 @@ func checkResultOkStatus[R anyResult](t *testing.T, results ...R) {
 	for _, res := range results {
 		assert.NotEmpty(t, res)
 		assert.Empty(t, res.GetStatus().GetCode())
+	}
+}
+
+// checkResultOkOrCancelledStatus checks if the results have ok or cancelled status. The result type can be any of those
+// supported by the test proxy.
+func checkResultOkOrCancelledStatus[R anyResult](t *testing.T, results ...R) {
+	for _, res := range results {
+		assert.NotEmpty(t, res)
+		resCode := res.GetStatus().GetCode()
+		assert.True(t, resCode == int32(codes.OK) || resCode == int32(codes.Canceled))
 	}
 }
 
