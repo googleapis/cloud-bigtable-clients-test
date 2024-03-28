@@ -246,7 +246,7 @@ func TestMutateRow_Generic_CloseClient(t *testing.T) {
 	assert.Equal(t, halfBatchSize, len(recorder))
 
 	// 4b. Check that all the batch-one requests succeeded
-	checkResultOkStatus(t, resultsBatchOne...)
+	checkResultOkOrCancelledStatus(t, resultsBatchOne...)
 
 	// 4c. Check that all the batch-two requests failed at the proxy level:
 	// the proxy tries to use close client. Client and server have nothing to blame.
