@@ -125,14 +125,20 @@ func (a *readRowsAction) Validate() {
 //     Effect: server will return an error. rowKey and offsetBytes that are specified in the same action will be ignored.
 //  6. sampleRowKeysAction{rpcError: error, delayStr: delay}
 //     Effect: server will return an error after delay. rowKey and offsetBytes that are specified in the same action will be ignored.
-//  7. To have a response stream with/without errors, a sequence of actions should be constructed.
-//  8. "endOfStream = true" is used only for concurrency testing.
+//  7. sampleRowKeysAction{rpcError: error, routingCookie: cookie}
+//     Effect: server will return an error with the routing cookie. Retry attempt header should have this cookie.
+//  8. sampleRowKeysAction{rpcError: error, retryInfo: delay}
+//     Effect: server will return an error with RetryInfo which has the specific delay.
+//  9. To have a response stream with/without errors, a sequence of actions should be constructed.
+//  10. "endOfStream = true" is used only for concurrency testing.
 type sampleRowKeysAction struct {
-	rowKey      []byte
-	offsetBytes int64
-	endOfStream bool   // If true, server will conclude the serving stream for the request.
-	rpcError    codes.Code
-	delayStr    string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	rowKey        []byte
+	offsetBytes   int64
+	endOfStream   bool   // If true, server will conclude the serving stream for the request.
+	rpcError      codes.Code
+	delayStr      string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	routingCookie string
+	retryInfo     string // "" means no RetryInfo will be attached in the error status
 }
 
 // mutateRowAction tells the mock server how to respond to a MutateRow request.
@@ -176,13 +182,19 @@ type entryData struct {
 //     Effect: server will return an error, without performing any row mutation.
 //  6. mutateRowsAction{rpcError: error, delayStr: delay}
 //     Effect: server will return an error after delay, without performing any row mutation.
-//  7. To have a response stream with/without rpc errors, a sequence of actions should be constructed.
-//  8. "endOfStream = true" is not needed if there are no subsequent actions for a request.
+//  7. mutateRowsAction{rpcError: error, routingCookie: cookie}
+//     Effect: server will return an error with the cookie. Retry attempt header should have this cookie.
+//  8. mutateRowsAction{rpcError: error, retryInfo: delay}
+//     Effect: server will return an error with RetryInfo which has the specific delay.
+//  9. To have a response stream with/without rpc errors, a sequence of actions should be constructed.
+//  10. "endOfStream = true" is not needed if there are no subsequent actions for a request.
 type mutateRowsAction struct {
-	data        entryData
-	endOfStream bool       // If set, server will conclude the serving for the request.
-	rpcError    codes.Code // The error is not specific to a particular row (we use entryData instead).
-	delayStr    string     // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	data          entryData
+	endOfStream   bool       // If set, server will conclude the serving for the request.
+	rpcError      codes.Code // The error is not specific to a particular row (we use entryData instead).
+	delayStr      string     // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	routingCookie string
+	retryInfo     string // "" means no RetryInfo will be attached in the error status
 }
 func (a *mutateRowsAction) Validate() {}
 
