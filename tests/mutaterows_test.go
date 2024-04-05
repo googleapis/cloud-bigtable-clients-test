@@ -463,3 +463,82 @@ func TestMutateRows_Generic_CloseClient(t *testing.T) {
 		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
 	}
 }
+
+// TestMutateRows_Retry_WithRoutingCookie tests that client handles routing cookie correctly.
+func TestMutateRows_Retry_WithRoutingCookie(t *testing.T) {
+	// 0. Common variables
+	const tableID string = "table"
+	cookie := "test-cookie"
+	clientReq := dummyMutateRowsRequest(tableID, 1)
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *mutateRowsReqRecord, 2)
+	mdRecorder := make(chan metadata.MD, 2)
+	actions := []*mutateRowsAction{
+		&mutateRowsAction{ rpcError: codes.Unavailable, routingCookie: cookie},
+		&mutateRowsAction{data: buildEntryData([]int{0}, nil, 0),},
+	}
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFnWithMetadata(recorder, mdRecorder, actions)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.MutateRowsRequest{
+		ClientId: t.Name(),
+		Request:  clientReq,
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doMutateRowsOp(t, server, &req, nil)
+
+	// 4a. Check that the overall operation succeeded
+	checkResultOkStatus(t, res)
+
+	// 4b. Verify routing cookie is seen
+	// Ignore the first metadata which won't have the routing cookie
+	var _ = <-mdRecorder
+	// second metadata which comes from the retry attempt should have a routing cookie field
+	md1 := <-mdRecorder
+	val := md1["x-goog-cbt-cookie-test"]
+	assert.NotEmpty(t, val)
+	if len(val) == 0 {
+		return
+	}
+	assert.Equal(t, cookie, val[0])
+}
+
+// TestMutateRows_Retry_WithRetryInfo tests that client is handling RetryInfo correctly.
+func TestMutateRows_Retry_WithRetryInfo(t *testing.T) {
+	// 0. Common variable
+	const tableID string = "table"
+	clientReq := dummyMutateRowsRequest(tableID, 1)
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *mutateRowsReqRecord, 2)
+	mdRecorder := make(chan metadata.MD, 2)
+	actions := []*mutateRowsAction{
+		&mutateRowsAction{ rpcError: codes.Unavailable, retryInfo: "2s"},
+		&mutateRowsAction{data: buildEntryData([]int{0}, nil, 0),},
+	}
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFnWithMetadata(recorder, mdRecorder, actions)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.MutateRowsRequest{
+		ClientId: t.Name(),
+		Request:  clientReq,
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doMutateRowsOp(t, server, &req, nil)
+
+	// 4a. Check that the overall operation succeeded
+	checkResultOkStatus(t, res)
+
+	// 4b. Verify retry backoff time is correct
+	firstReq := <-recorder
+	retryReq := <-recorder
+	firstReqTs := firstReq.ts.Unix()
+	retryReqTs := retryReq.ts.Unix()
+
+	assert.True(t, retryReqTs-firstReqTs >= 2)
+}

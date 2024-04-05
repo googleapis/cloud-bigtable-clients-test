@@ -315,3 +315,87 @@ func TestReadRow_Generic_CloseClient(t *testing.T) {
 		assert.NotEmpty(t, resultsBatchTwo[i].GetStatus().GetCode())
 	}
 }
+
+// TestReadRow_Retry_WithRoutingCookie tests that routing cookie is handled correctly by the client.
+func TestReadRow_Retry_WithRoutingCookie(t *testing.T) {
+	// 0. Common variable
+	cookie := "test-cookie"
+
+	// 1. Instantiate the mock server
+	sequence := []*readRowsAction{
+		&readRowsAction{rpcError: codes.Unavailable, routingCookie: cookie}, // Error with a routing cookie
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("row-01", "v5", Commit)}},
+	}
+	server := initMockServer(t)
+
+	mdRecords := make(chan metadata.MD, 2)
+	recorder := make(chan *readRowsReqRecord, 2)
+	server.ReadRowsFn = mockReadRowsFnWithMetadata(recorder, mdRecords, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowRequest{
+		ClientId:  t.Name(),
+		TableName: buildTableName("table"),
+		RowKey:    "row-01",
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowOp(t, server, &req, nil)
+
+	// 4a. Verify that the read succeeds
+	checkResultOkStatus(t, res)
+	assert.Equal(t, "row-01", string(res.Row.Key))
+
+	// 4b. Verify routing cookie is seen
+	// Ignore the first metadata which won't have the routing cookie
+	var _ = <-mdRecords
+	// second metadata which comes from the retry attempt should have a routing cookie field
+	md1 := <-mdRecords
+	val := md1["x-goog-cbt-cookie-test"]
+	assert.NotEmpty(t, val)
+	if len(val) == 0 {
+		return
+	}
+	assert.Equal(t, cookie, val[0])
+}
+
+// TestReadRow_Retry_WithRetryInfo tests that RetryInfo is handled correctly by the client.
+func TestReadRow_Retry_WithRetryInfo(t *testing.T) {
+	// 1. Instantiate the mock server
+	sequence := []*readRowsAction{
+		&readRowsAction{rpcError: codes.Unavailable, retryInfo: "2s"}, // Error with retry info
+		&readRowsAction{
+			chunks: []chunkData{
+				dummyChunkData("row-01", "v5", Commit)}},
+	}
+	server := initMockServer(t)
+
+	recorder := make(chan *readRowsReqRecord, 2)
+	server.ReadRowsFn = mockReadRowsFn(recorder, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadRowRequest{
+		ClientId:  t.Name(),
+		TableName: buildTableName("table"),
+		RowKey:    "row-01",
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadRowOp(t, server, &req, nil)
+
+	// 4a. Verify that the read succeeds
+	checkResultOkStatus(t, res)
+	assert.Equal(t, "row-01", string(res.Row.Key))
+
+	// 4b. Verify retry request is correct
+	firstReq := <-recorder
+	retryReq := <-recorder
+
+	// 4c. Verify retry backoff time is correct
+	firstReqTs := firstReq.ts.Unix()
+	retryReqTs := retryReq.ts.Unix()
+
+	assert.True(t, retryReqTs-firstReqTs >= 2)
+}

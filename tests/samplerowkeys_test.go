@@ -241,3 +241,81 @@ func TestSampleRowKeys_Generic_DeadlineExceeded(t *testing.T) {
 	// 4b. Check the DeadlineExceeded error
 	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
 }
+
+// TestSampleRowKeys_Retry_WithRoutingCookie tests that client handles routing cookie correctly.
+func TestSampleRowKeys_Retry_WithRoutingCookie(t *testing.T) {
+	// 0. Common variables
+	cookie := "test-cookie"
+	clientReq := &btpb.SampleRowKeysRequest{TableName: buildTableName("table")}
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *sampleRowKeysReqRecord, 2)
+	mdRecorder := make(chan metadata.MD, 2)
+	sequence := []sampleRowKeysAction{
+		sampleRowKeysAction{rpcError: codes.Unavailable, routingCookie: cookie},
+		sampleRowKeysAction{rowKey: []byte("row-31"), offsetBytes: 30},
+	}
+	server := initMockServer(t)
+	server.SampleRowKeysFn = mockSampleRowKeysFnWithMetadata(recorder, mdRecorder, sequence)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.SampleRowKeysRequest{
+		ClientId: t.Name(),
+		Request:  clientReq,
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doSampleRowKeysOp(t, server, &req, nil)
+
+	// 4a. Check that the operation succeeded
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 1, len(res.GetSamples()))
+	assert.Equal(t, "row-31", string(res.GetSamples()[0].RowKey))
+
+	// 4b. Verify routing cookie is seen
+	// Ignore the first metadata which won't have the routing cookie
+	var _ = <-mdRecorder
+	// second metadata which comes from the retry attempt should have a routing cookie field
+	md1 := <-mdRecorder
+	val := md1["x-goog-cbt-cookie-test"]
+	assert.NotEmpty(t, val)
+	if len(val) == 0 {
+		return
+	}
+	assert.Equal(t, cookie, val[0])
+}
+
+// TestSampleRowKeys_Retry_WithRetryInfo tests that client handles RetryInfo correctly.
+func TestSampleRowKeys_Retry_WithRetryInfo(t *testing.T) {
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *sampleRowKeysReqRecord, 2)
+	mdRecorder := make(chan metadata.MD, 2)
+	sequence := []sampleRowKeysAction{
+		sampleRowKeysAction{rpcError: codes.Unavailable, retryInfo: "2s"},
+		sampleRowKeysAction{rowKey: []byte("row-31"), offsetBytes: 30},
+	}
+	server := initMockServer(t)
+	server.SampleRowKeysFn = mockSampleRowKeysFnWithMetadata(recorder, mdRecorder, sequence)
+
+	// 2. Build the request to test proxy
+	clientReq := &btpb.SampleRowKeysRequest{TableName: buildTableName("table")}
+	req := testproxypb.SampleRowKeysRequest{
+		ClientId: t.Name(),
+		Request:  clientReq,
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doSampleRowKeysOp(t, server, &req, nil)
+
+	// 4a. Check that the overall operation succeeded
+	checkResultOkStatus(t, res)
+
+	// 4b. Verify retry backoff time is correct
+	firstReq := <-recorder
+	retryReq := <-recorder
+	firstReqTs := firstReq.ts.Unix()
+	retryReqTs := retryReq.ts.Unix()
+
+	assert.True(t, retryReqTs-firstReqTs >= 2)
+}

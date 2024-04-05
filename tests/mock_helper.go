@@ -239,6 +239,10 @@ func mockReadRowsFnWithMetadata(recorder chan<- *readRowsReqRecord, mdRecorder c
 // Unlike the other methods, the concurrency testing is quite restricted as we cannot differentiate
 // the requests by row keys (only table name is specified in the request).
 func mockSampleRowKeysFn(recorder chan<- *sampleRowKeysReqRecord, actions []sampleRowKeysAction) func(*btpb.SampleRowKeysRequest, btpb.Bigtable_SampleRowKeysServer) error {
+	return mockSampleRowKeysFnWithMetadata(recorder, nil, actions)
+}
+
+func mockSampleRowKeysFnWithMetadata(recorder chan<- *sampleRowKeysReqRecord, mdRecorder chan metadata.MD, actions []sampleRowKeysAction) func(*btpb.SampleRowKeysRequest, btpb.Bigtable_SampleRowKeysServer) error {
 	// Enqueue the actions, and server will consume the queue via FIFO.
 	actionQueue := make(chan *sampleRowKeysAction, len(actions))
 	for i := range actions {
@@ -249,6 +253,12 @@ func mockSampleRowKeysFn(recorder chan<- *sampleRowKeysReqRecord, actions []samp
 	return func(req *btpb.SampleRowKeysRequest, srv btpb.Bigtable_SampleRowKeysServer) error {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
+		}
+
+		// Record the metadata
+		if (mdRecorder != nil) {
+			md, _ := metadata.FromIncomingContext(srv.Context())
+			mdRecorder <- md
 		}
 
 		// Record the request
@@ -266,6 +276,20 @@ func mockSampleRowKeysFn(recorder chan<- *sampleRowKeysReqRecord, actions []samp
 			sleepFor(action.delayStr)
 
 			if action.rpcError != codes.OK {
+				if (action.routingCookie != "") {
+					// add routing cookie to metadata
+					trailer := metadata.Pairs("x-goog-cbt-cookie-test", action.routingCookie)
+					srv.SetTrailer(trailer)
+				}
+				if action.retryInfo != "" {
+					st := gs.New(action.rpcError, "SampleRowKeys failed")
+					delay, _ := time.ParseDuration(action.retryInfo)
+					retryInfo := &errdetails.RetryInfo{
+						RetryDelay: drpb.New(delay),
+					}
+					st, _ = st.WithDetails(retryInfo)
+					return st.Err()
+				}
 				return gs.Error(action.rpcError, "SampleRowKeys failed")
 			}
 
@@ -344,6 +368,10 @@ func mockMutateRowsFnSimple(recorder chan<- *mutateRowsReqRecord, actions ...*mu
 // For concurrency testing, each request MUST have prefix "opX-" in the row keys, indicating
 // that the X-th (zero based) actionSequence will be used to serve the request.
 func mockMutateRowsFn(recorder chan<- *mutateRowsReqRecord, actionSequences ...[]*mutateRowsAction) func(*btpb.MutateRowsRequest, btpb.Bigtable_MutateRowsServer) error {
+	return mockMutateRowsFnWithMetadata(recorder, nil, actionSequences...)
+}
+
+func mockMutateRowsFnWithMetadata(recorder chan<- *mutateRowsReqRecord, mdRecorder chan metadata.MD, actionSequences ...[]*mutateRowsAction) func(*btpb.MutateRowsRequest, btpb.Bigtable_MutateRowsServer) error {
 	// Build the map so that server can retrieve the proper action queue by key "opX-".
 	opIDToActionQueue := make(map[string]chan *mutateRowsAction)
 	buildActionMap(opIDToActionQueue, actionSequences)
@@ -351,6 +379,12 @@ func mockMutateRowsFn(recorder chan<- *mutateRowsReqRecord, actionSequences ...[
 	return func(req *btpb.MutateRowsRequest, srv btpb.Bigtable_MutateRowsServer) error {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
+		}
+
+		// Record the metadata
+		if (mdRecorder != nil) {
+			md, _ := metadata.FromIncomingContext(srv.Context())
+			mdRecorder <- md
 		}
 
 		// Record the request
@@ -382,6 +416,20 @@ func mockMutateRowsFn(recorder chan<- *mutateRowsReqRecord, actionSequences ...[
 			sleepFor(action.delayStr)
 
 			if action.rpcError != codes.OK {
+				if (action.routingCookie != "") {
+					// add routing cookie to metadata
+					trailer := metadata.Pairs("x-goog-cbt-cookie-test", action.routingCookie)
+					srv.SetTrailer(trailer)
+				}
+				if action.retryInfo != "" {
+					st := gs.New(action.rpcError, "MutateRows failed")
+					delay, _ := time.ParseDuration(action.retryInfo)
+					retryInfo := &errdetails.RetryInfo{
+						RetryDelay: drpb.New(delay),
+					}
+					st, err = st.WithDetails(retryInfo)
+					return st.Err()
+				}
 				return gs.Error(action.rpcError, "MutateRows failed")
 			}
 
