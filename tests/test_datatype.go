@@ -186,8 +186,8 @@ type entryData struct {
 //     Effect: server will return an error with the cookie. Retry attempt header should have this cookie.
 //  8. mutateRowsAction{rpcError: error, retryInfo: delay}
 //     Effect: server will return an error with RetryInfo which has the specific delay.
-//  7. To have a response stream with/without rpc errors, a sequence of actions should be constructed.
-//  8. "endOfStream = true" is not needed if there are no subsequent actions for a request.
+//  9. To have a response stream with/without rpc errors, a sequence of actions should be constructed.
+//  10. "endOfStream = true" is not needed if there are no subsequent actions for a request.
 type mutateRowsAction struct {
 	data          entryData
 	endOfStream   bool       // If set, server will conclude the serving for the request.

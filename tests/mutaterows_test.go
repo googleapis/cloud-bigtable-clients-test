@@ -475,7 +475,7 @@ func TestMutateRows_Retry_WithRoutingCookie(t *testing.T) {
 	recorder := make(chan *mutateRowsReqRecord, 2)
 	mdRecorder := make(chan metadata.MD, 2)
 	actions := []*mutateRowsAction{
-		&mutateRowsAction{ rpcError: codes.Unavailable, routingCookie: cookie},
+		&mutateRowsAction{rpcError: codes.Unavailable, routingCookie: cookie},
 		&mutateRowsAction{data: buildEntryData([]int{0}, nil, 0),},
 	}
 	server := initMockServer(t)
@@ -516,7 +516,7 @@ func TestMutateRows_Retry_WithRetryInfo(t *testing.T) {
 	recorder := make(chan *mutateRowsReqRecord, 2)
 	mdRecorder := make(chan metadata.MD, 2)
 	actions := []*mutateRowsAction{
-		&mutateRowsAction{ rpcError: codes.Unavailable, retryInfo: "2s"},
+		&mutateRowsAction{rpcError: codes.Unavailable, retryInfo: "2s"},
 		&mutateRowsAction{data: buildEntryData([]int{0}, nil, 0),},
 	}
 	server := initMockServer(t)
