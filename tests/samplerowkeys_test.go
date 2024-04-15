@@ -313,9 +313,13 @@ func TestSampleRowKeys_Retry_WithRetryInfo(t *testing.T) {
 
 	// 4b. Verify retry backoff time is correct
 	firstReq := <-recorder
-	retryReq := <-recorder
 	firstReqTs := firstReq.ts.Unix()
-	retryReqTs := retryReq.ts.Unix()
 
-	assert.True(t, retryReqTs-firstReqTs >= 2)
+	select {
+	case retryReq := <-recorder:
+		retryReqTs := retryReq.ts.Unix()
+		assert.True(t, retryReqTs-firstReqTs >= 2)
+	case <-time.After(2 * time.Second):
+		t.Error("Timeout waiting for retry request")
+	}
 }

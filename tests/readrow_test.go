@@ -397,5 +397,7 @@ func TestReadRow_Retry_WithRetryInfo(t *testing.T) {
 	firstReqTs := firstReq.ts.Unix()
 	retryReqTs := retryReq.ts.Unix()
 
-	assert.True(t, retryReqTs-firstReqTs >= 2)
+	delta := retryReqTs - firstReqTs
+
+	assert.True(t, delta >= 2, fmt.Sprintf("Expected retry to happen after 2ms, got %dms", delta))
 }
