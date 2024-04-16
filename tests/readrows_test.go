@@ -137,7 +137,7 @@ func TestReadRows_ReverseScans_FeatureFlag_Enabled(t *testing.T) {
 
 	ff, err := getClientFeatureFlags(md)
 	assert.Nil(t, err, "failed to decode client feature flags")
-	assert.True(t, ff != nil && ff.ReverseScans, "client does must enable ReverseScans feature flag")
+	assert.True(t, ff != nil && ff.ReverseScans, "client must enable ReverseScans feature flag")
 }
 
 // TestReadRows_NoRetry_OutOfOrderError_Reverse tests that client will fail on receiving out of order row keys for reverse scans.
