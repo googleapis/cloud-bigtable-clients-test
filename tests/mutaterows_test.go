@@ -336,17 +336,18 @@ func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
 
 	// 4b. Log the retry delays
 	origReq := <-recorder
-	firstRetry := <-recorder
-	secondRetry := <-recorder
-	thirdRetry := <-recorder
 
-	firstDelay := int(firstRetry.ts.UnixMilli() - origReq.ts.UnixMilli())
-	secondDelay := int(secondRetry.ts.UnixMilli() - firstRetry.ts.UnixMilli())
-	thirdDelay := int(thirdRetry.ts.UnixMilli() - secondRetry.ts.UnixMilli())
-
-	// Different clients may have different behaviors, we log the delays for informational purpose.
-	// Example: For the first retry delay, C++ client uses 100ms but Java client uses 10ms.
-	t.Logf("The three retry delays are: %dms, %dms, %dms", firstDelay, secondDelay, thirdDelay)
+	for n := 1; n < numRPCs; n += 1 {
+		select {
+		case retry := <- recorder:
+			delay := int(retry.ts.UnixMilli() - origReq.ts.UnixMilli())
+			// Different clients may have different behaviors, we log the delays for informational purpose.
+			// Example: For the first retry delay, C++ client uses 100ms but Java client uses 10ms.
+			t.Logf("Retry #%d delay: %dms", n, delay)
+		case <-time.After(500 * time.Millisecond):
+			t.Logf("Retry #%d: Timeout waiting for retry (expecting %d retries)", n, numRPCs - 1)
+		}
+	}
 }
 
 // TestMutateRows_Generic_MultiStreams tests that client can have multiple concurrent streams.
@@ -496,14 +497,19 @@ func TestMutateRows_Retry_WithRoutingCookie(t *testing.T) {
 	// 4b. Verify routing cookie is seen
 	// Ignore the first metadata which won't have the routing cookie
 	var _ = <-mdRecorder
-	// second metadata which comes from the retry attempt should have a routing cookie field
-	md1 := <-mdRecorder
-	val := md1["x-goog-cbt-cookie-test"]
-	assert.NotEmpty(t, val)
-	if len(val) == 0 {
-		return
+
+	select {
+	case md1 := <-mdRecorder:
+		// second metadata which comes from the retry attempt should have a routing cookie field
+		val := md1["x-goog-cbt-cookie-test"]
+		assert.NotEmpty(t, val)
+		if len(val) == 0 {
+			return
+		}
+		assert.Equal(t, cookie, val[0])
+	case <- time.After(100 * time.Millisecond):
+		t.Error("Timeout waiting for requests on recorder channel")
 	}
-	assert.Equal(t, cookie, val[0])
 }
 
 // TestMutateRows_Retry_WithRetryInfo tests that client is handling RetryInfo correctly.

@@ -136,10 +136,8 @@ func TestReadRows_ReverseScans_FeatureFlag_Enabled(t *testing.T) {
 	md := <-mdRecords
 
 	ff, err := getClientFeatureFlags(md)
-
 	assert.Nil(t, err, "failed to decode client feature flags")
-
-	assert.True(t, ff.ReverseScans, "client does must enable ReverseScans feature flag")
+	assert.True(t, ff != nil && ff.ReverseScans, "client must enable ReverseScans feature flag")
 }
 
 // TestReadRows_NoRetry_OutOfOrderError_Reverse tests that client will fail on receiving out of order row keys for reverse scans.
@@ -892,8 +890,13 @@ func TestReadRows_Retry_WithRoutingCookie_MultipleErrorResponses(t *testing.T) {
 	// 4a. Verify that the read succeeds
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(res.GetRows()))
-	assert.Equal(t, "row-01", string(res.Rows[0].Key))
-	assert.Equal(t, "row-05", string(res.Rows[1].Key))
+	if len(res.GetRows()) > 0 {
+		assert.Equal(t, "row-01", string(res.Rows[0].Key))
+	}
+
+	if len(res.GetRows()) > 1 {
+		assert.Equal(t, "row-05", string(res.Rows[1].Key))
+	}
 
 	// 4b. Verify routing cookie is seen
 	// Ignore the first metadata which won't have the routing cookie
