@@ -8,7 +8,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/api v0.180.0
-	google.golang.org/genproto v0.0.0-20240509183442-62759503f434
+	google.golang.org/genproto v0.0.0-20240515191416-fc5f0ca64291
 	google.golang.org/genproto/googleapis/api v0.0.0-20240509183442-62759503f434
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240515191416-fc5f0ca64291
 	google.golang.org/grpc v1.63.2
@@ -16,7 +16,7 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.112.2 // indirect
+	cloud.google.com/go v0.113.0 // indirect
 	cloud.google.com/go/auth v0.4.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.2 // indirect
 	cloud.google.com/go/compute v1.26.0 // indirect
