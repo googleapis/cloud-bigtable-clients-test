@@ -8,18 +8,18 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/api v0.180.0
-	google.golang.org/genproto v0.0.0-20240515191416-fc5f0ca64291
-	google.golang.org/genproto/googleapis/api v0.0.0-20240509183442-62759503f434
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240515191416-fc5f0ca64291
+	google.golang.org/genproto v0.0.0-20240610135401-a8a62080eff3
+	google.golang.org/genproto/googleapis/api v0.0.0-20240604185151-ef581f913117
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240604185151-ef581f913117
 	google.golang.org/grpc v1.64.0
 	google.golang.org/protobuf v1.34.1
 )
 
 require (
-	cloud.google.com/go v0.113.0 // indirect
+	cloud.google.com/go v0.114.0 // indirect
 	cloud.google.com/go/auth v0.4.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.2 // indirect
-	cloud.google.com/go/compute v1.26.0 // indirect
+	cloud.google.com/go/compute v1.27.0 // indirect
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	cloud.google.com/go/iam v1.1.8 // indirect
 	cloud.google.com/go/longrunning v0.5.7 // indirect
