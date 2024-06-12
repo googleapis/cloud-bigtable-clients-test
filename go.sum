@@ -19,6 +19,8 @@ cloud.google.com/go/bigtable v1.22.0 h1:npmvECJykfS9uPmAmBXnTUYqobLW58g8wrnRqss0
 cloud.google.com/go/bigtable v1.22.0/go.mod h1:KPhBg6FVYWxg7zOq0FTvqMPMERZTCeqkb1zkx9AApmE=
 cloud.google.com/go/bigtable v1.23.0 h1:ufk3XFeq5ZmFmkTZrWiCEMjn9kefKbHT8LVsrX+iqqc=
 cloud.google.com/go/bigtable v1.23.0/go.mod h1:WWRrYMBZpmHUO76ccwN7lx681FdyUWbIK2B4DDly0P4=
+cloud.google.com/go/bigtable v1.24.0 h1:RtBERIoZZsQm3LUExDGFWgOwMEHCO04O9/pDA0KoAZI=
+cloud.google.com/go/bigtable v1.24.0/go.mod h1:NlsITD7sKXo97kKIfF83ROd6P1bw8J4zsAUUYqk167Q=
 cloud.google.com/go/compute v1.23.3 h1:6sVlXXBmbd7jNX0Ipq0trII3e4n1/MsADLK6a+aiVlk=
 cloud.google.com/go/compute v1.23.3/go.mod h1:VCgBUoMnIVIR0CscqQiPJLAG25E3ZRZMzcFZeQ+h8CI=
 cloud.google.com/go/compute v1.23.4 h1:EBT9Nw4q3zyE7G45Wvv3MzolIrCJEuHys5muLY0wvAw=
