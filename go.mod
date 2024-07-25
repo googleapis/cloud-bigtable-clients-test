@@ -1,6 +1,8 @@
 module github.com/googleapis/cloud-bigtable-clients-test
 
-go 1.19
+go 1.21
+
+toolchain go1.22.5
 
 require (
 	cloud.google.com/go/bigtable v1.27.0
@@ -11,7 +13,7 @@ require (
 	google.golang.org/genproto v0.0.0-20240722135656-d784300faade
 	google.golang.org/genproto/googleapis/api v0.0.0-20240722135656-d784300faade
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240722135656-d784300faade
-	google.golang.org/grpc v1.64.1
+	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
 )
 
