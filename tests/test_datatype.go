@@ -38,10 +38,10 @@ import (
 type RowStatus int
 
 const (
-	None RowStatus = iota // Indicates the row hasn't been returned completely
-	Commit // Indicates that all the chunks of a row have been returned
-	Reset  // Indicates that the row will be re-read
-	Drop   // Indicates a row is filtered out from ReadRows response
+	None   RowStatus = iota // Indicates the row hasn't been returned completely
+	Commit                  // Indicates that all the chunks of a row have been returned
+	Reset                   // Indicates that the row will be re-read
+	Drop                    // Indicates a row is filtered out from ReadRows response
 )
 
 // chunkData represents a simplified version of btpb.ReadRowsResponse_CellChunk to facilitate
@@ -53,22 +53,23 @@ const (
 //
 // For "Drop" status, rowKey cannot be empty (test library will validate it) to avoid confusion
 // of dropping a chunk vs. dropping a row:
-//     ...
-//     chunkData{rowKey: "row", status: None, ...}
-//     chunkData{rowKey: "", status: None, ...}
-//     chunkData{rowKey: "", status: Drop, ...}
-//     ...
+//
+//	...
+//	chunkData{rowKey: "row", status: None, ...}
+//	chunkData{rowKey: "", status: None, ...}
+//	chunkData{rowKey: "", status: Drop, ...}
+//	...
 //
 // Guidance:
-//     - To drop a row, a single chunk is enough:
-//       ...
-//       chunkData{rowKey: "row", status: Drop, ...}
-//       ...
-//     - To drop a chunk, removing it from the response stream is enough:
-//       ...
-//       chunkData{rowKey: "row", status: None, ...}
-//       chunkData{rowKey: "", status: Commit, ...}
-//       ...
+//   - To drop a row, a single chunk is enough:
+//     ...
+//     chunkData{rowKey: "row", status: Drop, ...}
+//     ...
+//   - To drop a chunk, removing it from the response stream is enough:
+//     ...
+//     chunkData{rowKey: "row", status: None, ...}
+//     chunkData{rowKey: "", status: Commit, ...}
+//     ...
 type chunkData struct {
 	rowKey          []byte
 	familyName      string
@@ -99,10 +100,11 @@ type chunkData struct {
 type readRowsAction struct {
 	chunks        []chunkData
 	rpcError      codes.Code
-	delayStr      string  // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	delayStr      string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 	routingCookie string
-	retryInfo     string  // "" means no RetryInfo will be attached in the error status
+	retryInfo     string // "" means no RetryInfo will be attached in the error status
 }
+
 func (a *readRowsAction) Validate() {
 	for _, chunk := range a.chunks {
 		if len(chunk.rowKey) == 0 && chunk.status == Drop {
@@ -134,7 +136,7 @@ func (a *readRowsAction) Validate() {
 type sampleRowKeysAction struct {
 	rowKey        []byte
 	offsetBytes   int64
-	endOfStream   bool   // If true, server will conclude the serving stream for the request.
+	endOfStream   bool // If true, server will conclude the serving stream for the request.
 	rpcError      codes.Code
 	delayStr      string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 	routingCookie string
@@ -157,6 +159,7 @@ type mutateRowAction struct {
 	rpcError codes.Code
 	delayStr string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 }
+
 func (a *mutateRowAction) Validate() {}
 
 // entryData represents a simplified version of []btpb.MutateRowsResponse_Entry to facilitate
@@ -196,6 +199,7 @@ type mutateRowsAction struct {
 	routingCookie string
 	retryInfo     string // "" means no RetryInfo will be attached in the error status
 }
+
 func (a *mutateRowsAction) Validate() {}
 
 // checkAndMutateRowAction tells the mock server how to respond to a CheckAndMutateRow request.
@@ -215,6 +219,7 @@ type checkAndMutateRowAction struct {
 	rpcError         codes.Code
 	delayStr         string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 }
+
 func (a *checkAndMutateRowAction) Validate() {}
 
 // readModifyWriteRowAction tells the mock server how to respond to a ReadModifyWriteRow request.
@@ -234,77 +239,117 @@ type readModifyWriteRowAction struct {
 	rpcError codes.Code
 	delayStr string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 }
+
 func (a *readModifyWriteRowAction) Validate() {}
+
+// executeQueryAction denotes an error or a response in the response stream for an ExecuteQuery request.
+// Usage:
+//  1. executeQueryAction{response: res}
+//     Effect: server will return response, and there may be more to come.
+//  2. executeQueryAction{response: res, delayStr: delay}
+//     Effect: server will return the response after delay, and there may be more to come.
+//  3. executeQueryAction{rpcError: error}
+//     Effect: server will return an error. response specified in the same action will be ignored.
+//  4. executeQueryAction{rpcError: error, delayStr: delay}
+//     Effect: server will return an error after delay. response specified in the same action will be ignored.
+//  5. executeQueryAction{rpcError: error, routingCookie: cookie}
+//     Effect: server will return an error with the routing cookie. Retry attempt header should have this cookie.
+//  6. executeQueryAction{rpcError: error, retryInfo: delay}
+//     Effect: server will return an error with RetryInfo which has the specific delay.
+//  7. To have a response stream with/without errors, a sequence of actions should be constructed.
+type executeQueryAction struct {
+	response      *btpb.ExecuteQueryResponse
+	rpcError      codes.Code
+	delayStr      string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	routingCookie string
+	retryInfo     string // "" means no RetryInfo will be attached in the error status
+	endOfStream   bool   // If true, server will conclude the serving stream for the request.
+}
+
+func (a *executeQueryAction) Validate() {}
 
 // readRowsReqRecord allows the mock server to record the received ReadRowsRequest with timestamp.
 type readRowsReqRecord struct {
 	req *btpb.ReadRowsRequest
 	ts  time.Time
 }
-func (r *readRowsReqRecord) GetTs() time.Time {return r.ts}
+
+func (r *readRowsReqRecord) GetTs() time.Time { return r.ts }
 
 // sampleRowKeysReqRecord allows the mock server to record the received SampleRowKeysRequest with timestamp.
 type sampleRowKeysReqRecord struct {
 	req *btpb.SampleRowKeysRequest
 	ts  time.Time
 }
-func (r *sampleRowKeysReqRecord) GetTs() time.Time {return r.ts}
+
+func (r *sampleRowKeysReqRecord) GetTs() time.Time { return r.ts }
 
 // mutateRowReqRecord allows the mock server to record the received MutateRowRequest with timestamp.
 type mutateRowReqRecord struct {
 	req *btpb.MutateRowRequest
 	ts  time.Time
 }
-func (r *mutateRowReqRecord) GetTs() time.Time {return r.ts}
+
+func (r *mutateRowReqRecord) GetTs() time.Time { return r.ts }
 
 // mutateRowsReqRecord allows the mock server to record the received MutateRowsRequest with timestamp.
 type mutateRowsReqRecord struct {
 	req *btpb.MutateRowsRequest
 	ts  time.Time
 }
-func (r *mutateRowsReqRecord) GetTs() time.Time {return r.ts}
+
+func (r *mutateRowsReqRecord) GetTs() time.Time { return r.ts }
 
 // checkAndMutateRowReqRecord allows the mock server to record the received CheckAndMutateRowRequest with timestamp.
 type checkAndMutateRowReqRecord struct {
 	req *btpb.CheckAndMutateRowRequest
 	ts  time.Time
 }
-func (r *checkAndMutateRowReqRecord) GetTs() time.Time {return r.ts}
+
+func (r *checkAndMutateRowReqRecord) GetTs() time.Time { return r.ts }
 
 // readModifyWriteRowReqRecord allows the mock server to record the received ReadModifyWriteRowRequest with timestamp.
 type readModifyWriteRowReqRecord struct {
 	req *btpb.ReadModifyWriteRowRequest
 	ts  time.Time
 }
-func (r *readModifyWriteRowReqRecord) GetTs() time.Time {return r.ts}
+
+func (r *readModifyWriteRowReqRecord) GetTs() time.Time { return r.ts }
+
+type executeQueryReqRecord struct {
+	req *btpb.ExecuteQueryRequest
+	ts  time.Time
+}
+
+func (r *executeQueryReqRecord) GetTs() time.Time { return r.ts }
 
 // anyRequest is an interface type that works for the request types of test proxy.
 type anyRequest interface {
 	*testproxypb.ReadRowRequest | *testproxypb.ReadRowsRequest | *testproxypb.MutateRowRequest |
-	*testproxypb.MutateRowsRequest | *testproxypb.SampleRowKeysRequest |
-	*testproxypb.CheckAndMutateRowRequest | *testproxypb.ReadModifyWriteRowRequest
+		*testproxypb.MutateRowsRequest | *testproxypb.SampleRowKeysRequest |
+		*testproxypb.CheckAndMutateRowRequest | *testproxypb.ReadModifyWriteRowRequest | *testproxypb.ExecuteQueryRequest
 	GetClientId() string
 }
 
 // anyResult is an interface type that works for the result types of test proxy.
 type anyResult interface {
 	*testproxypb.RowResult | *testproxypb.RowsResult | *testproxypb.MutateRowResult |
-	*testproxypb.MutateRowsResult | *testproxypb.SampleRowKeysResult |
-	*testproxypb.CheckAndMutateRowResult
+		*testproxypb.MutateRowsResult | *testproxypb.SampleRowKeysResult |
+		*testproxypb.CheckAndMutateRowResult | *testproxypb.ExecuteQueryResult
 	GetStatus() *status.Status
 }
 
 // anyRecord is an interface type that works for the record types defined above.
 type anyRecord interface {
 	*readRowsReqRecord | *sampleRowKeysReqRecord | *mutateRowReqRecord | *mutateRowsReqRecord |
-	*checkAndMutateRowReqRecord | *readModifyWriteRowReqRecord
+		*checkAndMutateRowReqRecord | *readModifyWriteRowReqRecord | *executeQueryReqRecord
 	GetTs() time.Time
 }
 
 // anyAction is an interface type that works for the action types of mock server, except for sampleRowKeysAction.
 type anyAction interface {
 	*readRowsAction | *mutateRowAction | *mutateRowsAction |
-	*checkAndMutateRowAction | *readModifyWriteRowAction
+		*checkAndMutateRowAction | *readModifyWriteRowAction | *executeQueryAction
 	Validate()
 }
 
@@ -314,4 +359,3 @@ type clientOpts struct {
 	profile string
 	timeout *durationpb.Duration
 }
-
