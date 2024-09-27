@@ -20,6 +20,7 @@ package tests
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1160,7 +1161,7 @@ func TestExecuteQuery_HeadersAreSet(t *testing.T) {
 	)
 	executeRecorder := make(chan *executeQueryReqRecord, 1)
 	executeMdRecorder := make(chan metadata.MD, 1)
-	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, executeMdRecorder,
+	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadataSimple(executeRecorder, executeMdRecorder,
 		&executeQueryAction{
 			response:    partialResultSet("token", strVal("foo"), intVal(100)),
 			endOfStream: true,
@@ -1305,5 +1306,241 @@ func TestExecuteQuery_PrepareQueryRespectsDeadline(t *testing.T) {
 	}
 }
 
-// TODO test concurrent reqs
-// TODO testing closing client
+func TestExecuteQuery_ConcurrentRequests(t *testing.T) {
+	concurrency := 5
+	server := initMockServer(t)
+	prepareRecorder := make(chan *prepareQueryReqRecord, 2)
+	prepareQueryMap := map[string]*prepareQueryAction{
+		"query0": &prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(
+				column("strCol", strType()),
+			)),
+			delayStr: "2s",
+		},
+		"query1": &prepareQueryAction{
+			response: prepareResponse([]byte("query1"), md(column("intCol", int64Type()), column("boolCol", boolType()))),
+			delayStr: "2s",
+		},
+		"query2": &prepareQueryAction{
+			response: prepareResponse([]byte("query2"), md(column("mapCol", mapType(strType(), strType())), column("strCol", strType()))),
+			delayStr: "2s",
+		},
+		"query3": &prepareQueryAction{
+			response: prepareResponse([]byte("query3"), md(column("strCol", strType()), column("bytesCol", bytesType()))),
+			delayStr: "2s",
+		},
+		"query4": &prepareQueryAction{
+			response: prepareResponse([]byte("query4"), md(column("arrayOfString", arrayType(strType())))),
+			delayStr: "2s",
+		},
+	}
+	server.PrepareQueryFn = mockPrepareQueryFnWithMatchingQuery(prepareRecorder, prepareQueryMap)
+
+	recorder := make(chan *executeQueryReqRecord, concurrency)
+	actionSequences := map[string][]*executeQueryAction{
+		"query0": []*executeQueryAction{
+			&executeQueryAction{
+				response:    partialResultSet("token", strVal("foo"), strVal("bar"), strVal("baz")),
+				endOfStream: true,
+			},
+		},
+		"query1": []*executeQueryAction{
+			&executeQueryAction{
+				response:    partialResultSet("token", intVal(1), boolVal(true)),
+				delayStr:    "2s",
+				endOfStream: false,
+			},
+			&executeQueryAction{
+				response:    partialResultSet("token", intVal(2), boolVal(false)),
+				delayStr:    "2s",
+				endOfStream: true,
+			},
+		},
+		"query2": []*executeQueryAction{
+			&executeQueryAction{
+				response:    partialResultSet("token", mapVal(mapEntry(strVal("k"), strVal("v"))), strVal("foo")),
+				delayStr:    "2s",
+				endOfStream: true,
+			},
+		},
+		"query3": []*executeQueryAction{
+			&executeQueryAction{
+				endOfStream: true,
+			},
+		},
+		"query4": []*executeQueryAction{
+			&executeQueryAction{
+				response:    partialResultSet("token", arrayVal(strVal("e1"), strVal("e2")), arrayVal(strVal("f1"), strVal("f2"))),
+				delayStr:    "2s",
+				endOfStream: true,
+			},
+		},
+	}
+	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(recorder, nil, actionSequences)
+
+	reqs := make([]*testproxypb.ExecuteQueryRequest, concurrency)
+	for i := 0; i < concurrency; i++ {
+		reqs[i] = &testproxypb.ExecuteQueryRequest{
+			ClientId: t.Name(),
+			Request: &btpb.ExecuteQueryRequest{
+				InstanceName: instanceName,
+				Query:        "query" + strconv.Itoa(i),
+			},
+		}
+	}
+
+	results := doExecuteQueryOps(t, server, reqs, nil)
+
+	assert.Equal(t, concurrency, len(recorder))
+
+	// request1
+	checkResultOkStatus(t, results[0])
+	assert.Equal(t, len(results[0].Metadata.Columns), 1)
+	assert.True(t, cmp.Equal(results[0].Metadata, testProxyMd(column("strCol", strType())), protocmp.Transform()))
+	assert.Equal(t, len(results[0].Rows), 3)
+	assertRowEqual(t, testProxyRow(strVal("foo")), results[0].Rows[0], results[0].Metadata)
+	assertRowEqual(t, testProxyRow(strVal("bar")), results[0].Rows[1], results[0].Metadata)
+	assertRowEqual(t, testProxyRow(strVal("baz")), results[0].Rows[2], results[0].Metadata)
+
+	// request2
+	checkResultOkStatus(t, results[1])
+	assert.Equal(t, len(results[1].Metadata.Columns), 2)
+	assert.True(t, cmp.Equal(results[1].Metadata, testProxyMd(column("intCol", int64Type()), column("boolCol", boolType())), protocmp.Transform()))
+	assert.Equal(t, len(results[1].Rows), 2)
+	assertRowEqual(t, testProxyRow(intVal(1), boolVal(true)), results[1].Rows[0], results[1].Metadata)
+	assertRowEqual(t, testProxyRow(intVal(2), boolVal(false)), results[1].Rows[1], results[1].Metadata)
+
+	// request3
+	checkResultOkStatus(t, results[2])
+	assert.Equal(t, len(results[2].Metadata.Columns), 2)
+	assert.True(t, cmp.Equal(results[2].Metadata, testProxyMd(column("mapCol", mapType(strType(), strType())), column("strCol", strType())), protocmp.Transform()))
+	assert.Equal(t, len(results[2].Rows), 1)
+	assertRowEqual(t, testProxyRow(mapVal(mapEntry(strVal("k"), strVal("v"))), strVal("foo")), results[2].Rows[0], results[2].Metadata)
+
+	// request4
+	checkResultOkStatus(t, results[3])
+	assert.Equal(t, len(results[3].Metadata.Columns), 2)
+	assert.True(t, cmp.Equal(results[3].Metadata, testProxyMd(column("strCol", strType()), column("bytesCol", bytesType())), protocmp.Transform()))
+	assert.Equal(t, len(results[3].Rows), 0)
+
+	// request5
+	checkResultOkStatus(t, results[4])
+	assert.Equal(t, len(results[4].Metadata.Columns), 1)
+	assert.True(t, cmp.Equal(results[4].Metadata, testProxyMd(column("arrayOfString", arrayType(strType()))), protocmp.Transform()))
+	assert.Equal(t, len(results[4].Rows), 2)
+	assertRowEqual(t, testProxyRow(arrayVal(strVal("e1"), strVal("e2"))), results[4].Rows[0], results[4].Metadata)
+	assertRowEqual(t, testProxyRow(arrayVal(strVal("f1"), strVal("f2"))), results[4].Rows[1], results[4].Metadata)
+}
+
+// tests that client doesn't kill inflight requests after client closing, but will reject new requests.
+func TestExecuteQuery_CloseClient(t *testing.T) {
+	clientID := t.Name()
+	server := initMockServer(t)
+	prepareRecorder := make(chan *prepareQueryReqRecord, 2)
+	// The preparedQuery is used to match to a corresponding executeQueryAction
+	// based on the key in the actionSequences map below
+	server.PrepareQueryFn = mockPrepareQueryFn(prepareRecorder,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(
+				column("strCol", strType()),
+			)),
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query1"), md(
+				column("strCol", strType()),
+			)),
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query2"), md(
+				column("strCol", strType()),
+			)),
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query3"), md(
+				column("strCol", strType()),
+			)),
+		},
+	)
+
+	executeRecorder := make(chan *executeQueryReqRecord, 4)
+	repeatedExecuteAction := []*executeQueryAction{
+		&executeQueryAction{
+			response:    partialResultSet("token", strVal("foo")),
+			delayStr:    "2s",
+			endOfStream: true,
+		},
+	}
+
+	actionSequences := map[string][]*executeQueryAction{
+		"query0": repeatedExecuteAction,
+		"query1": repeatedExecuteAction,
+		"query2": repeatedExecuteAction,
+		"query3": repeatedExecuteAction,
+	}
+	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil, actionSequences)
+
+	// Will be finished
+	reqsBatchOne := []*testproxypb.ExecuteQueryRequest{
+		&testproxypb.ExecuteQueryRequest{
+			ClientId: t.Name(),
+			Request: &btpb.ExecuteQueryRequest{
+				InstanceName: instanceName,
+				Query:        "query0",
+			},
+		},
+		&testproxypb.ExecuteQueryRequest{
+			ClientId: t.Name(),
+			Request: &btpb.ExecuteQueryRequest{
+				InstanceName: instanceName,
+				Query:        "query1",
+			},
+		},
+	}
+	// Will be rejected by client
+	reqsBatchTwo := []*testproxypb.ExecuteQueryRequest{
+		&testproxypb.ExecuteQueryRequest{
+			ClientId: t.Name(),
+			Request: &btpb.ExecuteQueryRequest{
+				InstanceName: instanceName,
+				Query:        "query2",
+			},
+		},
+		&testproxypb.ExecuteQueryRequest{
+			ClientId: t.Name(),
+			Request: &btpb.ExecuteQueryRequest{
+				InstanceName: instanceName,
+				Query:        "query3",
+			},
+		},
+	}
+	setUp(t, server, clientID, nil)
+	defer tearDown(t, server, clientID)
+
+	closeClientAfter := time.Second
+	resultsBatchOne := doExecuteQueryOpsCore(t, clientID, reqsBatchOne, &closeClientAfter)
+	resultsBatchTwo := doExecuteQueryOpsCore(t, clientID, reqsBatchTwo, nil)
+
+	// Check that server only receives batch-one requests
+	assert.Equal(t, 2, len(executeRecorder))
+
+	// Check that all the batch-one requests succeeded or were cancelled
+	checkResultOkOrCancelledStatus(t, resultsBatchOne...)
+	for i := 0; i < 2; i++ {
+		assert.NotNil(t, resultsBatchOne[i])
+		if resultsBatchOne[i] == nil {
+			continue
+		}
+		resCode := resultsBatchOne[i].GetStatus().GetCode()
+		if resCode == int32(codes.Canceled) {
+			continue
+		}
+		assert.Equal(t, len(resultsBatchOne[i].Metadata.Columns), 1)
+		assert.True(t, cmp.Equal(resultsBatchOne[i].Metadata, testProxyMd(column("strCol", strType())), protocmp.Transform()))
+		assert.Equal(t, len(resultsBatchOne[i].Rows), 1)
+		assertRowEqual(t, testProxyRow(strVal("foo")), resultsBatchOne[i].Rows[0], resultsBatchOne[i].Metadata)
+	}
+
+	// Check that all the batch-two requests failed at the proxy level
+	assert.NotEmpty(t, resultsBatchTwo[0].GetStatus().GetCode())
+	assert.NotEmpty(t, resultsBatchTwo[1].GetStatus().GetCode())
+}
