@@ -2,7 +2,7 @@ module github.com/googleapis/cloud-bigtable-clients-test
 
 go 1.22.7
 
-toolchain go1.23.3
+toolchain go1.23.4
 
 require (
 	cloud.google.com/go/bigtable v1.33.0
