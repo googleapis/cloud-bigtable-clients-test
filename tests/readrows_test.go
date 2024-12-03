@@ -244,7 +244,10 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 		origRows := origReq.req.GetRows()
 		// Check if rows or row ranges are present in requests. This is a workaround for the NodeJS client. 
 		// In Node we add an empty row range to a full table scan request to simplify the resumption logic.
-		if origRows == nil || origRows.GetRowRanges() == nil || (len(origRows.GetRowRanges()) == 1 && len(origRows.GetRowKeys()) == 0){
+		if origRows == nil || origRows.GetRowRanges() == nil {
+			// If rows don't exist in either request, skip the comparison
+			t.Logf("Skipping rows comparison: As this is a full table scan")
+		} else if len(origRows.GetRowRanges()) == 1 && origRows.GetRowRanges()[0].GetStartKey() == nil && origRows.GetRowRanges()[0].GetEndKey() == nil {
 			// If rows don't exist in either request, skip the comparison
 			t.Logf("Skipping rows comparison: As this is a full table scan")
 		} else {
