@@ -243,7 +243,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 	retryReq := <-recorder
 	if diff := cmp.Diff(clientReq, origReq.req, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
 		origRows := origReq.req.GetRows()
-		// Check if rows or row ranges are present in requests. This is a workaround for the NodeJS client.
+		// Check if rows or row ranges are present in requests. This is a workaround for the NodeJS client. 
 		// In Node we add an empty row range to a full table scan request to simplify the resumption logic.
 		if origRows == nil || origRows.GetRowRanges() == nil {
 			// If rows don't exist in either request, skip the comparison
@@ -253,7 +253,7 @@ func TestReadRows_Retry_PausedScan(t *testing.T) {
 			t.Logf("Skipping rows comparison: As this is a full table scan")
 		} else {
 			// Otherwise, proceed with the comparison and report any differences
-			t.Errorf("diff found (-want +got):\n%s", diff)
+			t.Errorf("diff found (-want +got):\n%s", diff) 
 		}
 	}
 	assert.True(t, cmp.Equal(retryReq.req.GetRows().GetRowRanges()[0].StartKey, &btpb.RowRange_StartKeyOpen{StartKeyOpen: []byte("row-01")}))
