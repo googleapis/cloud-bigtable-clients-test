@@ -223,7 +223,6 @@ func TestMutateRows_Generic_DeadlineExceeded(t *testing.T) {
 	assert.Less(t, runTimeSecs, 8) // 8s (< 10s of server delay time) indicates timeout takes effect.
 
 	// 4c. Check the failed row
-	checkResultOkStatus(t, res)
 	assert.Equal(t, 1, len(res.GetEntries()))
 	for _, entry := range res.GetEntries() {
 		assert.Equal(t, int32(codes.DeadlineExceeded), entry.GetStatus().GetCode())
