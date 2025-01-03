@@ -37,6 +37,7 @@ const (
 	mockServerAddr = "localhost:0"
 	projectID      = "project"
 	instanceID     = "instance"
+	instanceName   = "projects/" + projectID + "/instances/" + instanceID
 )
 
 // buildTableName returns a full table name using the given `tableID`.
@@ -579,6 +580,71 @@ func doReadModifyWriteRowOpsCore(
 		go func(i int) {
 			defer wg.Done()
 			res, err := testProxyClient.ReadModifyWriteRow(context.Background(), reqs[i])
+			fillResults(t, results, res, err, i)
+		}(i)
+	}
+	if closeCbtClientAfter != nil {
+		time.Sleep(*closeCbtClientAfter)
+		closeCbtClient(t, clientID)
+	}
+	wg.Wait()
+
+	return results
+}
+
+// doExecuteQueryOp is a simple wrapper of doExecuteQueryOps. It's useful when there is only one ExecuteQuery
+// operation to perform. A single result will be returned, where nil value indicates proxy
+// failure (not client's).
+func doExecuteQueryOp(
+	t *testing.T,
+	s *Server,
+	req *testproxypb.ExecuteQueryRequest,
+	opts *clientOpts) *testproxypb.ExecuteQueryResult {
+
+	results := doExecuteQueryOps(t, s, []*testproxypb.ExecuteQueryRequest{req}, opts)
+	return results[0]
+}
+
+// doExecuteQuerysOps performs ExecuteQuery operations in parallel, using the test proxy requests `reqs` and
+// the mock server `s`. Non-nil `opts` will override the default client settings including app
+// profile id and timeout. The results will be returned, where the i-th result corresponds to the
+// i-th request. nil element indicates proxy failure (not client's).
+// Note that the function manages the setup and teardown of resources.
+func doExecuteQueryOps(
+	t *testing.T,
+	s *Server,
+	reqs []*testproxypb.ExecuteQueryRequest,
+	opts *clientOpts) []*testproxypb.ExecuteQueryResult {
+
+	clientID := reqs[0].GetClientId()
+	setUp(t, s, clientID, opts)
+	defer tearDown(t, s, clientID)
+
+	return doExecuteQueryOpsCore(t, clientID, reqs, nil)
+}
+
+// doExecuteQueryOpsCore does the work of sending concurrent requests to test proxy and collecting the
+// results, where the i-th result corresponds to the i-th request. nil element indicates proxy
+// failure (not client's). Non-nil `closeCbtClientAfter` will trigger Cloud Bigtable client being
+// closed after sending off all the requests (>=1s delay should ensure the requests are already
+// sent off when the client is closed).
+// Note that the function doesn't manage the setup and teardown of resources.
+func doExecuteQueryOpsCore(
+	t *testing.T,
+	clientID string,
+	reqs []*testproxypb.ExecuteQueryRequest,
+	closeCbtClientAfter *time.Duration) []*testproxypb.ExecuteQueryResult {
+
+	validateClientID(t, reqs, clientID)
+
+	// Ask the CBT client to do ExecuteQuery via the test proxy
+	var wg sync.WaitGroup
+	results := make([]*testproxypb.ExecuteQueryResult, len(reqs))
+	for i := range reqs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			res, err := testProxyClient.ExecuteQuery(context.Background(), reqs[i])
 			fillResults(t, results, res, err, i)
 		}(i)
 	}
