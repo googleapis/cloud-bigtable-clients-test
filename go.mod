@@ -11,10 +11,10 @@ require (
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/api v0.211.0
 	google.golang.org/genproto v0.0.0-20241216192217-9240e9c98484
-	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241216192217-9240e9c98484
+	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250102185135-69823020774d
 	google.golang.org/grpc v1.68.0
-	google.golang.org/protobuf v1.36.0
+	google.golang.org/protobuf v1.36.1
 )
 
 require (
