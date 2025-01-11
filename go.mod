@@ -5,12 +5,12 @@ go 1.22.7
 toolchain go1.23.4
 
 require (
-	cloud.google.com/go/bigtable v1.33.0
+	cloud.google.com/go/bigtable v1.34.0
 	github.com/golang/protobuf v1.5.4
 	github.com/google/go-cmp v0.6.0
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/api v0.216.0
-	google.golang.org/genproto v0.0.0-20241216192217-9240e9c98484
+	google.golang.org/genproto v0.0.0-20250106144421-5f5ef82da422
 	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250102185135-69823020774d
 	google.golang.org/grpc v1.69.2
@@ -19,13 +19,13 @@ require (
 
 require (
 	cel.dev/expr v0.16.2 // indirect
-	cloud.google.com/go v0.117.0 // indirect
+	cloud.google.com/go v0.118.0 // indirect
 	cloud.google.com/go/auth v0.13.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.6 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
-	cloud.google.com/go/iam v1.3.0 // indirect
-	cloud.google.com/go/longrunning v0.6.3 // indirect
-	cloud.google.com/go/monitoring v1.22.0 // indirect
+	cloud.google.com/go/iam v1.3.1 // indirect
+	cloud.google.com/go/longrunning v0.6.4 // indirect
+	cloud.google.com/go/monitoring v1.22.1 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20240905190251-b4127c9b8d78 // indirect
