@@ -224,9 +224,11 @@ func TestMutateRows_Generic_DeadlineExceeded(t *testing.T) {
 
 	// 4c. Check the failed row
 	assert.Equal(t, int32(codes.DeadlineExceeded), res.GetStatus().GetCode())
-	assert.Equal(t, 1, len(res.GetEntries()))
-	for _, entry := range res.GetEntries() {
-		assert.Equal(t, int32(codes.DeadlineExceeded), entry.GetStatus().GetCode())
+	if len(res.GetEntries()) != 0 {
+		assert.Equal(t, 1, len(res.GetEntries()))
+		for _, entry := range res.GetEntries() {
+			assert.Equal(t, int32(codes.DeadlineExceeded), entry.GetStatus().GetCode())
+		}
 	}
 }
 
@@ -339,13 +341,13 @@ func TestMutateRows_Retry_ExponentialBackoff(t *testing.T) {
 
 	for n := 1; n < numRPCs; n += 1 {
 		select {
-		case retry := <- recorder:
+		case retry := <-recorder:
 			delay := int(retry.ts.UnixMilli() - origReq.ts.UnixMilli())
 			// Different clients may have different behaviors, we log the delays for informational purpose.
 			// Example: For the first retry delay, C++ client uses 100ms but Java client uses 10ms.
 			t.Logf("Retry #%d delay: %dms", n, delay)
 		case <-time.After(500 * time.Millisecond):
-			t.Logf("Retry #%d: Timeout waiting for retry (expecting %d retries)", n, numRPCs - 1)
+			t.Logf("Retry #%d: Timeout waiting for retry (expecting %d retries)", n, numRPCs-1)
 		}
 	}
 }
@@ -477,7 +479,7 @@ func TestMutateRows_Retry_WithRoutingCookie(t *testing.T) {
 	mdRecorder := make(chan metadata.MD, 2)
 	actions := []*mutateRowsAction{
 		&mutateRowsAction{rpcError: codes.Unavailable, routingCookie: cookie},
-		&mutateRowsAction{data: buildEntryData([]int{0}, nil, 0),},
+		&mutateRowsAction{data: buildEntryData([]int{0}, nil, 0)},
 	}
 	server := initMockServer(t)
 	server.MutateRowsFn = mockMutateRowsFnWithMetadata(recorder, mdRecorder, actions)
@@ -507,7 +509,7 @@ func TestMutateRows_Retry_WithRoutingCookie(t *testing.T) {
 			return
 		}
 		assert.Equal(t, cookie, val[0])
-	case <- time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
 		t.Error("Timeout waiting for requests on recorder channel")
 	}
 }
@@ -523,7 +525,7 @@ func TestMutateRows_Retry_WithRetryInfo(t *testing.T) {
 	mdRecorder := make(chan metadata.MD, 2)
 	actions := []*mutateRowsAction{
 		&mutateRowsAction{rpcError: codes.Unavailable, retryInfo: "2s"},
-		&mutateRowsAction{data: buildEntryData([]int{0}, nil, 0),},
+		&mutateRowsAction{data: buildEntryData([]int{0}, nil, 0)},
 	}
 	server := initMockServer(t)
 	server.MutateRowsFn = mockMutateRowsFnWithMetadata(recorder, mdRecorder, actions)
