@@ -27,12 +27,15 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
+// Tests that a query will run successfully when receiving a response with no rows
 func TestExecuteQuery_EmptyResponse(t *testing.T) {
+	// 1. Instantiate the mock server
 	recorder := make(chan *executeQueryReqRecord, 1)
 	server := initMockServer(t)
 	server.ExecuteQueryFn = mockExecuteQueryFn(recorder, &executeQueryAction{
 		response: md(column("test", strType())),
 	})
+	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
 		ClientId: t.Name(),
 		Request: &btpb.ExecuteQueryRequest{
@@ -40,7 +43,9 @@ func TestExecuteQuery_EmptyResponse(t *testing.T) {
 			Query:        "SELECT * FROM table",
 		},
 	}
+	// 3. Perform the operation via test proxy
 	res := doExecuteQueryOp(t, server, &req, nil)
+	// 4. Verify the read succeeds, gets the expected metadata, and the client sends the request properly
 	checkResultOkStatus(t, res)
 	assert.Equal(t, len(res.Metadata.Columns), 1)
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(column("test", strType())), protocmp.Transform()))
@@ -52,7 +57,9 @@ func TestExecuteQuery_EmptyResponse(t *testing.T) {
 	}
 }
 
+// Tests that a query will run successfully when receiving a rsimple response
 func TestExecuteQuery_SingleSimpleRow(t *testing.T) {
+	// 1. Instantiate the mock server
 	server := initMockServer(t)
 	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
 		&executeQueryAction{
@@ -63,6 +70,7 @@ func TestExecuteQuery_SingleSimpleRow(t *testing.T) {
 			response:    partialResultSet("token", strValue("foo")),
 			endOfStream: true,
 		})
+	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
 		ClientId: t.Name(),
 		Request: &btpb.ExecuteQueryRequest{
@@ -70,8 +78,10 @@ func TestExecuteQuery_SingleSimpleRow(t *testing.T) {
 			Query:        "SELECT * FROM table",
 		},
 	}
+	// 3. Perform the operation via test proxy
 	res := doExecuteQueryOp(t, server, &req, nil)
 	checkResultOkStatus(t, res)
+	// 4. Verify the read succeeds, gets the expected metadata & data, and the client sends the request properly
 	assert.Equal(t, len(res.Metadata.Columns), 1)
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(column("test", strType())), protocmp.Transform()))
 	assert.Equal(t, len(res.Rows), 1)
