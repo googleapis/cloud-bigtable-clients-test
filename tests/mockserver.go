@@ -53,6 +53,8 @@ type Server struct {
 	CheckAndMutateRowFn func(context.Context, *btpb.CheckAndMutateRowRequest) (*btpb.CheckAndMutateRowResponse, error)
 	// ReadModifyWriteRowFn mocks ReadModifyWriteRow.
 	ReadModifyWriteRowFn func(context.Context, *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error)
+	// ExecuteQueryFn mocks ExecuteQuery
+	ExecuteQueryFn func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error
 }
 
 // NewServer creates a new Server.
@@ -135,4 +137,11 @@ func (s *Server) ReadModifyWriteRow(ctx context.Context, srv *btpb.ReadModifyWri
 		return s.ReadModifyWriteRowFn(ctx, srv)
 	}
 	return nil, status.Error(codes.Unimplemented, "unimplemented - you need to attach a ReadModifyWriteRowFn to the server")
+}
+
+func (s *Server) ExecuteQuery(req *btpb.ExecuteQueryRequest, srv btpb.Bigtable_ExecuteQueryServer) error {
+	if s.ExecuteQueryFn != nil {
+		return s.ExecuteQueryFn(req, srv)
+	}
+	return status.Error(codes.Unimplemented, "unimplemented - you need to attach a ExecuteQueryFn to the server")
 }
