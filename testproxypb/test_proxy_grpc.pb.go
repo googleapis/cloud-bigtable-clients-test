@@ -1,4 +1,4 @@
-// Copyright 2023 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -99,7 +99,7 @@ type CloudBigtableV2TestProxyClient interface {
 	SampleRowKeys(ctx context.Context, in *SampleRowKeysRequest, opts ...grpc.CallOption) (*SampleRowKeysResult, error)
 	// Performs a read-modify-write operation with the client.
 	ReadModifyWriteRow(ctx context.Context, in *ReadModifyWriteRowRequest, opts ...grpc.CallOption) (*RowResult, error)
-	// Executes a SQL query with the client.
+	// Executes a BTQL query with the client.
 	ExecuteQuery(ctx context.Context, in *ExecuteQueryRequest, opts ...grpc.CallOption) (*ExecuteQueryResult, error)
 }
 
@@ -274,7 +274,7 @@ type CloudBigtableV2TestProxyServer interface {
 	SampleRowKeys(context.Context, *SampleRowKeysRequest) (*SampleRowKeysResult, error)
 	// Performs a read-modify-write operation with the client.
 	ReadModifyWriteRow(context.Context, *ReadModifyWriteRowRequest) (*RowResult, error)
-	// Executes a SQL query with the client.
+	// Executes a BTQL query with the client.
 	ExecuteQuery(context.Context, *ExecuteQueryRequest) (*ExecuteQueryResult, error)
 	mustEmbedUnimplementedCloudBigtableV2TestProxyServer()
 }
