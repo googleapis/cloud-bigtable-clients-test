@@ -10,7 +10,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/api v0.217.0
-	google.golang.org/genproto v0.0.0-20250204164813-702378808489
+	google.golang.org/genproto v0.0.0-20250207221924-e9438ea467c6
 	google.golang.org/genproto/googleapis/api v0.0.0-20250124145028-65684f501c47
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250127172529-29210b9bc287
 	google.golang.org/grpc v1.70.0
