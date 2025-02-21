@@ -7,7 +7,7 @@ toolchain go1.24.0
 require (
 	cloud.google.com/go/bigtable v1.35.0
 	github.com/golang/protobuf v1.5.4
-	github.com/google/go-cmp v0.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/api v0.217.0
 	google.golang.org/genproto v0.0.0-20250204164813-702378808489
