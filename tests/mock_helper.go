@@ -22,14 +22,14 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/golang/protobuf/ptypes/wrappers"
-	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	gs "google.golang.org/grpc/status"
 	drpb "google.golang.org/protobuf/types/known/durationpb"
+	wrappers "google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 var rowKeyPrefixRegex = regexp.MustCompile("^op[0-9]+-")
@@ -619,12 +619,58 @@ func mockExecuteQueryFnWithMetadata(recorder chan<- *executeQueryReqRecord, mdRe
 				return gs.Error(action.rpcError, "ExecuteQuery failed")
 			}
 
-			srv.Send(action.response)
+			if action.response != nil {
+				srv.Send(action.response)
+			}
 
 			if action.endOfStream {
 				return nil
 			}
 		}
 		return nil
+	}
+}
+
+func mockPrepareQueryFn(recorder chan<- *prepareQueryReqRecord, actions ...*prepareQueryAction) func(context.Context, *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error) {
+	return mockPrepareQueryFnWithMetadata(recorder, nil, actions...)
+}
+
+func mockPrepareQueryFnWithMetadata(recorder chan<- *prepareQueryReqRecord, mdRecorder chan metadata.MD, actions ...*prepareQueryAction) func(context.Context, *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error) {
+	// Convert the action sequence to a queue for server to consume.
+	actionQueue := make(chan *prepareQueryAction, len(actions))
+	for _, action := range actions {
+		action.Validate()
+		actionQueue <- action
+	}
+	close(actionQueue)
+
+	return func(ctx context.Context, req *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error) {
+		if *printClientReq {
+			serverLogger.Printf("Request from client: %+v", req)
+		}
+
+		// Record the metadata
+		if mdRecorder != nil {
+			md, _ := metadata.FromIncomingContext(ctx)
+			mdRecorder <- md
+		}
+
+		// Record the request
+		reqRecord := &prepareQueryReqRecord{
+			req: req,
+			ts:  time.Now(),
+		}
+		saveReqRecord(recorder, reqRecord)
+
+		// Perform the action
+		action := <-actionQueue
+
+		sleepFor(action.delayStr)
+
+		if action.rpcError != codes.OK {
+			return nil, gs.Error(action.rpcError, "PrepareQuery failed")
+		}
+
+		return action.response, nil
 	}
 }

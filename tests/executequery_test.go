@@ -20,20 +20,26 @@ package tests
 import (
 	"testing"
 
+	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
-	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
 // Tests that a query will run successfully when receiving a response with no rows
 func TestExecuteQuery_EmptyResponse(t *testing.T) {
 	// 1. Instantiate the mock server
-	recorder := make(chan *executeQueryReqRecord, 1)
 	server := initMockServer(t)
-	server.ExecuteQueryFn = mockExecuteQueryFn(recorder, &executeQueryAction{
-		response: md(column("test", strType())),
+	prepareRecorder := make(chan *prepareQueryReqRecord, 1)
+	server.PrepareQueryFn = mockPrepareQueryFn(prepareRecorder,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("foo"), md(column("test", strType()))),
+		},
+	)
+	executeRecorder := make(chan *executeQueryReqRecord, 1)
+	server.ExecuteQueryFn = mockExecuteQueryFn(executeRecorder, &executeQueryAction{
+		endOfStream: true,
 	})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
@@ -45,27 +51,40 @@ func TestExecuteQuery_EmptyResponse(t *testing.T) {
 	}
 	// 3. Perform the operation via test proxy
 	res := doExecuteQueryOp(t, server, &req, nil)
-	// 4. Verify the read succeeds, gets the expected metadata, and the client sends the request properly
+	// 4. Verify the read succeeds, gets the expected metadata, and the client sends the requests properly
 	checkResultOkStatus(t, res)
 	assert.Equal(t, len(res.Metadata.Columns), 1)
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(column("test", strType())), protocmp.Transform()))
 	assert.Equal(t, len(res.Rows), 0)
 
-	origReq := <-recorder
-	if diff := cmp.Diff(req.Request, origReq.req, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
+	expectedPrepareReq := &btpb.PrepareQueryRequest{
+		InstanceName: instanceName,
+		Query:        "SELECT * FROM table",
+	}
+	origPrepareReq := <-prepareRecorder
+	if diff := cmp.Diff(expectedPrepareReq, origPrepareReq.req, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
+	expectedExecuteReq := &btpb.ExecuteQueryRequest{
+		InstanceName:  instanceName,
+		PreparedQuery: []byte("foo"),
+	}
+	origExecuteReq := <-executeRecorder
+	if diff := cmp.Diff(expectedExecuteReq, origExecuteReq.req, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
 		t.Errorf("diff found (-want +got):\n%s", diff)
 	}
 }
 
-// Tests that a query will run successfully when receiving a rsimple response
+// Tests that a query will run successfully when receiving a simple response
 func TestExecuteQuery_SingleSimpleRow(t *testing.T) {
 	// 1. Instantiate the mock server
 	server := initMockServer(t)
-	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
-		&executeQueryAction{
-			response:    md(column("test", strType())),
-			endOfStream: false,
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("foo"), md(column("test", strType()))),
 		},
+	)
+	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
 		&executeQueryAction{
 			response:    partialResultSet("token", strValue("foo")),
 			endOfStream: true,

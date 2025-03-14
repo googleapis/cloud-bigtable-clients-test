@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
+	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
-	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

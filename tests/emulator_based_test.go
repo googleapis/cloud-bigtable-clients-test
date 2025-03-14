@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build emulator
 // +build emulator
 
 // Tests in this file uses an in-memory emulator for Cloud Bigtable, so as to
@@ -26,11 +27,11 @@ import (
 	"testing"
 
 	"cloud.google.com/go/bigtable"
+	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"cloud.google.com/go/bigtable/bttest"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
-	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc"
 )
 
@@ -68,9 +69,9 @@ func createTableInEmulator(addr string, tableID string, familyID string) error {
 // TestEmulator_EnvVar tests that client can connect to emulator via environment
 // variable BIGTABLE_EMULATOR_HOST. For this reason, the test is different from the
 // other mockserver-based tests:
-//   1. Before bringing up the test proxy, set BIGTABLE_EMULATOR_HOST as
-//      localhost:<your selected server port>
-//   2. Before launching this test, you should also set BIGTABLE_EMULATOR_HOST as above.
+//  1. Before bringing up the test proxy, set BIGTABLE_EMULATOR_HOST as
+//     localhost:<your selected server port>
+//  2. Before launching this test, you should also set BIGTABLE_EMULATOR_HOST as above.
 //
 // As the use of BIGTABLE_EMULATOR_HOST may introduce failure (e.g., it's not set properly),
 // the test will exit gracefully on the related error.
@@ -111,9 +112,9 @@ func TestEmulator_EnvVar(t *testing.T) {
 	// 4. Write some data
 	mutateReq := &testproxypb.MutateRowRequest{
 		ClientId: clientID,
-		Request:  &btpb.MutateRowRequest{
+		Request: &btpb.MutateRowRequest{
 			TableName: buildTableName(tableID),
-			RowKey: []byte(rowKey),
+			RowKey:    []byte(rowKey),
 			Mutations: []*btpb.Mutation{
 				&btpb.Mutation{
 					Mutation: &btpb.Mutation_SetCell_{
@@ -141,4 +142,3 @@ func TestEmulator_EnvVar(t *testing.T) {
 	assert.Equal(t, rowKey, string(readRes[0].Row.GetKey()))
 	assert.Equal(t, value, string(readRes[0].Row.Families[0].Columns[0].Cells[0].GetValue()))
 }
-

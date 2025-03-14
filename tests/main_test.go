@@ -29,11 +29,11 @@ import (
 
 var proxyAddr = flag.String("proxy_addr", "",
 	"The address of the test proxy server, which exports the CloudBigtableV2TestProxy "+
-	"service and should be running already. host:port address is expected. "+
-	":port also works as the proxy server is local.")
+		"service and should be running already. host:port address is expected. "+
+		":port also works as the proxy server is local.")
 var printClientReq = flag.Bool("print_client_req", false,
 	"If enabled, server will print its received requests from the client. It helps debugging, "+
-	"but is quite verbose. Default to false.")
+		"but is quite verbose. Default to false.")
 var enableFeaturesAll = flag.Bool("enable_features_all", false,
 	"If enabled, client will enable all the optional features before sending out requests.")
 
