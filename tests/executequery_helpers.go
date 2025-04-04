@@ -1,24 +1,43 @@
 package tests
 
 import (
+	"hash/crc32"
 	"log"
+	"time"
 
-	"github.com/golang/protobuf/proto"
+	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
-	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	"google.golang.org/protobuf/proto"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func md(columns ...*btpb.ColumnMetadata) *btpb.ExecuteQueryResponse {
-	return &btpb.ExecuteQueryResponse{
-		Response: &btpb.ExecuteQueryResponse_Metadata{
-			Metadata: &btpb.ResultSetMetadata{
-				Schema: &btpb.ResultSetMetadata_ProtoSchema{
-					ProtoSchema: &btpb.ProtoSchema{
-						Columns: columns,
-					},
-				},
+var crc32cTable = crc32.MakeTable(crc32.Castagnoli)
+
+func crc32cChecksum(contents []byte) *uint32 {
+	checksum := crc32.Checksum(contents, crc32cTable)
+	return &checksum
+}
+
+func md(columns ...*btpb.ColumnMetadata) *btpb.ResultSetMetadata {
+	return &btpb.ResultSetMetadata{
+		Schema: &btpb.ResultSetMetadata_ProtoSchema{
+			ProtoSchema: &btpb.ProtoSchema{
+				Columns: columns,
 			},
 		},
+	}
+}
+
+func prepareResponse(preparedQuery []byte, md *btpb.ResultSetMetadata) *btpb.PrepareQueryResponse {
+	return prepareResponseWithExpiry(preparedQuery, md, time.Now().Add(1*time.Hour))
+}
+
+func prepareResponseWithExpiry(preparedQuery []byte, md *btpb.ResultSetMetadata, validUntil time.Time) *btpb.PrepareQueryResponse {
+	ts := tspb.New(validUntil)
+	return &btpb.PrepareQueryResponse{
+		PreparedQuery: preparedQuery,
+		Metadata:      md,
+		ValidUntil:    ts,
 	}
 }
 
@@ -74,9 +93,11 @@ func chunkedPartialResultSet(chunks int, token string, values ...*btpb.Value) []
 	chunkSize := int(len(rowBytes) / chunks)
 	for i := 0; i < chunks; i++ {
 		var tokenProto []byte = nil
-		// If it's the final chunk, set the token
+		var checksum *uint32 = nil
+		// If it's the final chunk, set the token and checksum
 		if i == chunks-1 {
 			tokenProto = []byte(token)
+			checksum = crc32cChecksum(rowBytes)
 		}
 		dataChunk := rowBytes[i*chunkSize : (i+1)*chunkSize]
 		partialResult := &btpb.ExecuteQueryResponse{
@@ -87,7 +108,8 @@ func chunkedPartialResultSet(chunks int, token string, values ...*btpb.Value) []
 							BatchData: dataChunk,
 						},
 					},
-					ResumeToken: tokenProto,
+					ResumeToken:   tokenProto,
+					BatchChecksum: checksum,
 				},
 			},
 		}

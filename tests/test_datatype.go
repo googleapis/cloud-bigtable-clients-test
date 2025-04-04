@@ -26,8 +26,8 @@ import (
 	"log"
 	"time"
 
+	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
-	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -268,6 +268,24 @@ type executeQueryAction struct {
 
 func (a *executeQueryAction) Validate() {}
 
+// prepareQueryAction denotes an error or a response in the response stream for an ExecuteQuery request.
+// Usage:
+//  1. prepareQueryAction{response: res}
+//     Effect: server will return response.
+//  2. prepareQueryAction{response: res, delayStr: delay}
+//     Effect: server will return the response after delay.
+//  3. prepareQueryAction{rpcError: error}
+//     Effect: server will return an error. response specified in the same action will be ignored.
+//  4. prepareQueryAction{rpcError: error, delayStr: delay}
+//     Effect: server will return an error after delay. response specified in the same action will be ignored.
+type prepareQueryAction struct {
+	response *btpb.PrepareQueryResponse
+	rpcError codes.Code
+	delayStr string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+}
+
+func (a *prepareQueryAction) Validate() {}
+
 // readRowsReqRecord allows the mock server to record the received ReadRowsRequest with timestamp.
 type readRowsReqRecord struct {
 	req *btpb.ReadRowsRequest
@@ -316,12 +334,21 @@ type readModifyWriteRowReqRecord struct {
 
 func (r *readModifyWriteRowReqRecord) GetTs() time.Time { return r.ts }
 
+// executeQueryReqRecord allows the mock server to record the received ExecuteQueryRequests with timestamp.
 type executeQueryReqRecord struct {
 	req *btpb.ExecuteQueryRequest
 	ts  time.Time
 }
 
 func (r *executeQueryReqRecord) GetTs() time.Time { return r.ts }
+
+// prepareQueryReqRecord allows the mock server to record the received PrepareQueryRequests with timestamp.
+type prepareQueryReqRecord struct {
+	req *btpb.PrepareQueryRequest
+	ts  time.Time
+}
+
+func (r *prepareQueryReqRecord) GetTs() time.Time { return r.ts }
 
 // anyRequest is an interface type that works for the request types of test proxy.
 type anyRequest interface {
@@ -342,14 +369,14 @@ type anyResult interface {
 // anyRecord is an interface type that works for the record types defined above.
 type anyRecord interface {
 	*readRowsReqRecord | *sampleRowKeysReqRecord | *mutateRowReqRecord | *mutateRowsReqRecord |
-		*checkAndMutateRowReqRecord | *readModifyWriteRowReqRecord | *executeQueryReqRecord
+		*checkAndMutateRowReqRecord | *readModifyWriteRowReqRecord | *executeQueryReqRecord | *prepareQueryReqRecord
 	GetTs() time.Time
 }
 
 // anyAction is an interface type that works for the action types of mock server, except for sampleRowKeysAction.
 type anyAction interface {
 	*readRowsAction | *mutateRowAction | *mutateRowsAction |
-		*checkAndMutateRowAction | *readModifyWriteRowAction | *executeQueryAction
+		*checkAndMutateRowAction | *readModifyWriteRowAction | *executeQueryAction | *prepareQueryAction
 	Validate()
 }
 

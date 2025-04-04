@@ -21,7 +21,7 @@ import (
 	"context"
 	"net"
 
-	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
+	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -55,6 +55,8 @@ type Server struct {
 	ReadModifyWriteRowFn func(context.Context, *btpb.ReadModifyWriteRowRequest) (*btpb.ReadModifyWriteRowResponse, error)
 	// ExecuteQueryFn mocks ExecuteQuery
 	ExecuteQueryFn func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error
+	// PrepareQueryFn mocks PrepareQuery
+	PrepareQueryFn func(context.Context, *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error)
 }
 
 // NewServer creates a new Server.
@@ -144,4 +146,11 @@ func (s *Server) ExecuteQuery(req *btpb.ExecuteQueryRequest, srv btpb.Bigtable_E
 		return s.ExecuteQueryFn(req, srv)
 	}
 	return status.Error(codes.Unimplemented, "unimplemented - you need to attach a ExecuteQueryFn to the server")
+}
+
+func (s *Server) PrepareQuery(ctx context.Context, req *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error) {
+	if s.PrepareQueryFn != nil {
+		return s.PrepareQueryFn(ctx, req)
+	}
+	return nil, status.Error(codes.Unimplemented, "unimplemented - you need to attach a PrepareQueryFn to the server")
 }
