@@ -1042,8 +1042,8 @@ func TestReadRows_Retry_WithRetryInfo_MultipleErrorResponse(t *testing.T) {
 	retryReq1Ts := retryReq1.ts.UnixNano() / 1e6
 	retryReq2Ts := retryReq2.ts.UnixNano() / 1e6
 	assert.True(t, retryReq1Ts-firstReqTs >= 2000)
-	// default initial retry delay is less than 10ms
-	assert.True(t, retryReq2Ts-retryReq1Ts <= 10)
+	// The second attempt should have delay greater than default initial delay, which is 10ms
+	assert.True(t, retryReq2Ts-retryReq1Ts > 10)
 }
 
 // TestReadRows_Retry_WithRetryInfo tests that RetryInfo is handled correctly by the client.
