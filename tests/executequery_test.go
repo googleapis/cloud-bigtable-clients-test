@@ -625,8 +625,7 @@ func TestExecuteQuery_BatchesTest(t *testing.T) {
 			response: prepareResponse([]byte("foo"), md(columns...)),
 		},
 	)
-	// Mock ExecuteQuery to return results across multiple streams (mimicking client sending resume token)
-	// Note: The test proxy likely handles the resume token internally, so we just chain the responses here.
+	// Return all of the batches
 	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
 		&executeQueryAction{ // Batch 1, Chunk 1
 			response:    batch1[0],
@@ -681,7 +680,7 @@ func TestExecuteQuery_FailsOnEmptyMetadata(t *testing.T) {
 	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
 		&executeQueryAction{
 			response:    partialResultSet("token", bytesVal([]byte("foo")), strVal("s"), bytesVal([]byte("bar"))),
-			endOfStream: false,
+			endOfStream: true,
 		})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
@@ -789,7 +788,7 @@ func TestExecuteQuery_FailsOnNotEnoughData(t *testing.T) {
 	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
 		&executeQueryAction{
 			response:    partialResultSet("token", bytesVal([]byte("foo"))), // Only 1 value provided with token
-			endOfStream: false,
+			endOfStream: true,
 		})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
@@ -827,7 +826,7 @@ func TestExecuteQuery_FailsOnNotEnoughDataWithCompleteRows(t *testing.T) {
 		&executeQueryAction{
 			// One complete row (2 values) + start of next row (1 value)
 			response:    partialResultSet("token", bytesVal([]byte("foo")), strVal("s"), bytesVal([]byte("bar"))),
-			endOfStream: false,
+			endOfStream: true,
 		})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
@@ -864,7 +863,7 @@ func TestExecuteQuery_FailsOnTypeMismatch(t *testing.T) {
 	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
 		&executeQueryAction{
 			response:    partialResultSet("token", bytesVal([]byte("foo")), strVal("s"), bytesVal([]byte("bar")), intVal(42)), // Sends int where string expected
-			endOfStream: false,
+			endOfStream: true,
 		})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
@@ -901,7 +900,7 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinMap(t *testing.T) {
 		&executeQueryAction{
 			// Sends map<string, string> instead of map<string, int64>
 			response:    partialResultSet("token", mapVal(mapEntry(strVal("s"), strVal("wrong")))),
-			endOfStream: false,
+			endOfStream: true,
 		})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
@@ -938,7 +937,7 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinArray(t *testing.T) {
 		&executeQueryAction{
 			// Sends array<string, int> instead of array<string>
 			response:    partialResultSet("token", arrayVal(strVal("foo"), intVal(1))),
-			endOfStream: false,
+			endOfStream: true,
 		})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
@@ -976,7 +975,7 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinStruct(t *testing.T) {
 		&executeQueryAction{
 			// Sends struct<string, string> instead of struct<string, int64>
 			response:    partialResultSet("token", structVal(strVal("foo"), strVal("bar"))),
-			endOfStream: false,
+			endOfStream: true,
 		})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
@@ -1013,7 +1012,7 @@ func TestExecuteQuery_FailsOnStructMissingField(t *testing.T) {
 	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
 		&executeQueryAction{
 			response:    partialResultSet("token", structVal(strVal("foo"))), // Sends only 1 field
-			endOfStream: false,
+			endOfStream: true,
 		})
 	// 2. Build the request to test proxy
 	req := testproxypb.ExecuteQueryRequest{
