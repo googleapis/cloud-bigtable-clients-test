@@ -54,6 +54,8 @@ func sleepFor(duration string) {
 // Output: [[a1_for_req1], [a2_for_req2], ..., [aN_for_reqN]]
 //
 //	-- There is one action sequence per request, and each sequence only contains one element.
+//
+//	-- There is one action sequence per request, and each sequence only contains one element.
 func expandDim[A anyAction](actions []A) [][]A {
 	actionSequences := make([][]A, len(actions))
 	for i, action := range actions {
@@ -559,25 +561,41 @@ func mockReadModifyWriteRowFn(recorder chan<- *readModifyWriteRowReqRecord, acti
 
 // mockExecuteQueryFnSimple is a simple wrapper of mockExecuteQueryFn. It's useful when server only performs
 // one action per request, as users don't need to assemble an array of actions per request.
-func mockExecuteQueryFn(recorder chan<- *executeQueryReqRecord, actionSequences ...*executeQueryAction) func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error {
-	return mockExecuteQueryFnWithMetadata(recorder, nil, actionSequences...)
+func mockExecuteQueryFn(recorder chan<- *executeQueryReqRecord, actionSequence ...*executeQueryAction) func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error {
+	return mockExecuteQueryFnWithMetadataSimple(recorder, nil, actionSequence...)
+}
+
+// helper for using mockExecuteQueryFnWithMetadata with a single action sequence
+func mockExecuteQueryFnWithMetadataSimple(recorder chan<- *executeQueryReqRecord, mdRecorder chan metadata.MD, actionSequence ...*executeQueryAction) func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error {
+	actionSequences := make(map[string][]*executeQueryAction, 1)
+	actionSequences["onlySequence"] = actionSequence
+	return mockExecuteQueryFnWithMetadata(recorder, mdRecorder, actionSequences)
 }
 
 // mockExecuteQueryFn returns a mock implementation of server-side ExecuteQuery(). The behavior is
 // customized by `actionSequences`. Non-nil `recorder` will be used to log the requests
 // (including retries) received by the server in time order, up to its capacity.
-func mockExecuteQueryFnWithMetadata(recorder chan<- *executeQueryReqRecord, mdRecorder chan metadata.MD, actionSequences ...*executeQueryAction) func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error {
-	// Convert the action sequence to a queue for server to consume.
-	actionQueue := make(chan *executeQueryAction, len(actionSequences))
-	for _, action := range actionSequences {
-		action.Validate()
-		actionQueue <- action
-	}
-	close(actionQueue)
-
+// If only one actionSequence is specified then it is used for all requests. If multiple are
+// specified this expects the Request PreparedQuery to be the map key of the sequence it should use.
+func mockExecuteQueryFnWithMetadata(recorder chan<- *executeQueryReqRecord, mdRecorder chan metadata.MD, actionSequences map[string][]*executeQueryAction) func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error {
 	return func(req *btpb.ExecuteQueryRequest, srv btpb.Bigtable_ExecuteQueryServer) error {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
+		}
+
+		// if there is only one action sequence use it. Otherwise
+		// we assume the prepared query is a utf-8 string of the an int of the sequence index
+		var selectedActionSequence []*executeQueryAction
+		if len(actionSequences) == 1 {
+			selectedActionSequence = actionSequences["onlySequence"]
+		} else {
+			selectedActionSequence = actionSequences[string(req.PreparedQuery)]
+		}
+
+		actionQueue := make(chan *executeQueryAction, len(selectedActionSequence))
+		for _, action := range selectedActionSequence {
+			action.Validate()
+			actionQueue <- action
 		}
 
 		// Record the metadata
@@ -631,10 +649,28 @@ func mockExecuteQueryFnWithMetadata(recorder chan<- *executeQueryReqRecord, mdRe
 	}
 }
 
+// mockPrepareQueryFn is a simple wrapper of mockPrepareQueryFnWithMetadata. It doesn't record
+// any metadata
 func mockPrepareQueryFn(recorder chan<- *prepareQueryReqRecord, actions ...*prepareQueryAction) func(context.Context, *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error) {
 	return mockPrepareQueryFnWithMetadata(recorder, nil, actions...)
 }
 
+// mockPrepareQueryFnWithMatchingQuery returns a mock implementation of server-side PrepareQuery(). The behavior is
+// customized by `queryMap`. Non-nil `recorder` will be used to log the requests
+// (including retries) received by the server in time order, up to its capacity.
+// The key of query map is used to find the appropriate prepareQueryAction based on the request Query.
+// Requests with the same query will reuse the same prepareQueryAction multiple times.
+func mockPrepareQueryFnWithMatchingQuery(recorder chan<- *prepareQueryReqRecord, queryMap map[string]*prepareQueryAction) func(context.Context, *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error) {
+	return func(ctx context.Context, req *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error) {
+		prepareAction := queryMap[req.Query]
+		return mockPrepareQueryFn(recorder, prepareAction)(ctx, req)
+	}
+}
+
+// mockPrepareQueryFnWithMetadata returns a mock implementation of server-side PrepareQuery(). The behavior is
+// customized by `actions`. Non-nil `recorder` will be used to log the requests
+// (including retries) received by the server in time order, up to its capacity.
+// The prepareQueryActions in actions will be used in order for each request.
 func mockPrepareQueryFnWithMetadata(recorder chan<- *prepareQueryReqRecord, mdRecorder chan metadata.MD, actions ...*prepareQueryAction) func(context.Context, *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error) {
 	// Convert the action sequence to a queue for server to consume.
 	actionQueue := make(chan *prepareQueryAction, len(actions))
