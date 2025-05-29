@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.24.2
 
 require (
-	cloud.google.com/go/bigtable v1.36.0
+	cloud.google.com/go/bigtable v1.37.0
 	github.com/google/go-cmp v0.7.0
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/api v0.231.0
@@ -22,7 +22,7 @@ require (
 	cloud.google.com/go/auth v0.16.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
-	cloud.google.com/go/iam v1.4.2 // indirect
+	cloud.google.com/go/iam v1.5.0 // indirect
 	cloud.google.com/go/longrunning v0.6.6 // indirect
 	cloud.google.com/go/monitoring v1.24.1 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
