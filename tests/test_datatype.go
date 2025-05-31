@@ -28,6 +28,7 @@ import (
 
 	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
+	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -260,7 +261,8 @@ func (a *readModifyWriteRowAction) Validate() {}
 type executeQueryAction struct {
 	response      *btpb.ExecuteQueryResponse
 	rpcError      codes.Code
-	delayStr      string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	apiError      *apierror.APIError // Functions the same as rpcError but allows for more customization
+	delayStr      string             // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 	routingCookie string
 	retryInfo     string // "" means no RetryInfo will be attached in the error status
 	endOfStream   bool   // If true, server will conclude the serving stream for the request.
