@@ -578,6 +578,18 @@ func mockExecuteQueryFnWithMetadataSimple(recorder chan<- *executeQueryReqRecord
 // If only one actionSequence is specified then it is used for all requests. If multiple are
 // specified this expects the Request PreparedQuery to be the map key of the sequence it should use.
 func mockExecuteQueryFnWithMetadata(recorder chan<- *executeQueryReqRecord, mdRecorder chan metadata.MD, actionSequences map[string][]*executeQueryAction) func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error {
+	preparedQueryToActionQueue := make(map[string]chan *executeQueryAction)
+	for preparedQuery, actionSequence := range actionSequences {
+		// Convert the action sequence to a queue for server to consume.
+		actionQueue := make(chan *executeQueryAction, len(actionSequence))
+		for _, action := range actionSequence {
+			action.Validate()
+			actionQueue <- action
+		}
+		close(actionQueue)
+		preparedQueryToActionQueue[preparedQuery] = actionQueue
+	}
+
 	return func(req *btpb.ExecuteQueryRequest, srv btpb.Bigtable_ExecuteQueryServer) error {
 		if *printClientReq {
 			serverLogger.Printf("Request from client: %+v", req)
@@ -585,17 +597,11 @@ func mockExecuteQueryFnWithMetadata(recorder chan<- *executeQueryReqRecord, mdRe
 
 		// if there is only one action sequence use it. Otherwise
 		// we assume the prepared query is a utf-8 string of the an int of the sequence index
-		var selectedActionSequence []*executeQueryAction
+		var selectedActionQueue chan *executeQueryAction
 		if len(actionSequences) == 1 {
-			selectedActionSequence = actionSequences["onlySequence"]
+			selectedActionQueue = preparedQueryToActionQueue["onlySequence"]
 		} else {
-			selectedActionSequence = actionSequences[string(req.PreparedQuery)]
-		}
-
-		actionQueue := make(chan *executeQueryAction, len(selectedActionSequence))
-		for _, action := range selectedActionSequence {
-			action.Validate()
-			actionQueue <- action
+			selectedActionQueue = preparedQueryToActionQueue[string(req.PreparedQuery)]
 		}
 
 		// Record the metadata
@@ -613,7 +619,7 @@ func mockExecuteQueryFnWithMetadata(recorder chan<- *executeQueryReqRecord, mdRe
 
 		// Perform the actions
 		for {
-			action, more := <-actionQueue
+			action, more := <-selectedActionQueue
 			if !more {
 				break
 			}
@@ -635,6 +641,23 @@ func mockExecuteQueryFnWithMetadata(recorder chan<- *executeQueryReqRecord, mdRe
 					return st.Err()
 				}
 				return gs.Error(action.rpcError, "ExecuteQuery failed")
+			}
+			if action.apiError != nil {
+				if action.routingCookie != "" {
+					// add routing cookie to metadata
+					trailer := metadata.Pairs("x-goog-cbt-cookie-test", action.routingCookie)
+					srv.SetTrailer(trailer)
+				}
+				if action.retryInfo != "" {
+					st := action.apiError.GRPCStatus()
+					delay, _ := time.ParseDuration(action.retryInfo)
+					retryInfo := &errdetails.RetryInfo{
+						RetryDelay: drpb.New(delay),
+					}
+					st, _ = st.WithDetails(retryInfo)
+					return st.Err()
+				}
+				return action.apiError
 			}
 
 			if action.response != nil {

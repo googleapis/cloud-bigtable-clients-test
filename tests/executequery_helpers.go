@@ -8,7 +8,11 @@ import (
 
 	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
+	"github.com/googleapis/gax-go/v2/apierror"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	datepb "google.golang.org/genproto/googleapis/type/date"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -314,11 +318,7 @@ func testProxyRow(values ...*btpb.Value) *testproxypb.SqlRow {
 	}
 }
 
-func partialResultSet(token string, values ...*btpb.Value) *btpb.ExecuteQueryResponse {
-	return chunkedPartialResultSet(1, token, values...)[0]
-}
-
-func chunkedPartialResultSet(chunks int, token string, values ...*btpb.Value) []*btpb.ExecuteQueryResponse {
+func splitIntoChunks(chunks int, values ...*btpb.Value) ([][]byte, *uint32) {
 	protoRows := &btpb.ProtoRows{
 		Values: values,
 	}
@@ -326,31 +326,69 @@ func chunkedPartialResultSet(chunks int, token string, values ...*btpb.Value) []
 	if err != nil {
 		log.Fatalln("Failed to encode protoRows:", err)
 	}
+	if len(rowBytes) < chunks {
+		log.Fatalln("Data length must be enough to fill each batch")
+	}
+
+	baseChunkSize := len(rowBytes) / chunks
+	chunkData := make([][]byte, 0, chunks)
+	currentIndex := 0
+
+	// Create the first numChunks-1 chunks with the base size.
+	for i := 0; i < chunks-1; i++ {
+		endIndex := currentIndex + baseChunkSize
+		chunkData = append(chunkData, rowBytes[currentIndex:endIndex])
+		currentIndex = endIndex
+	}
+
+	// The last chunk takes all the remaining data.
+	chunkData = append(chunkData, rowBytes[currentIndex:])
+
+	return chunkData, crc32cChecksum(rowBytes)
+}
+
+func partialResultSet(token string, values ...*btpb.Value) *btpb.ExecuteQueryResponse {
+	return chunkedPartialResultSet(1, token, values...)[0]
+}
+
+func prsFromBytes(batchData []byte, reset bool, token *string, checksum *uint32) *btpb.ExecuteQueryResponse {
+	var convertedToken []byte = nil
+	if token != nil {
+		convertedToken = []byte(*token)
+	}
+	return &btpb.ExecuteQueryResponse{
+		Response: &btpb.ExecuteQueryResponse_Results{
+			Results: &btpb.PartialResultSet{
+				PartialRows: &btpb.PartialResultSet_ProtoRowsBatch{
+					ProtoRowsBatch: &btpb.ProtoRowsBatch{
+						BatchData: batchData,
+					},
+				},
+				ResumeToken:   convertedToken,
+				BatchChecksum: checksum,
+				Reset_:        reset,
+			},
+		},
+	}
+}
+
+func chunkedPartialResultSet(chunks int, token string, values ...*btpb.Value) []*btpb.ExecuteQueryResponse {
+	chunkData, checksum := splitIntoChunks(chunks, values...)
 
 	res := make([]*btpb.ExecuteQueryResponse, chunks)
-	chunkSize := int(len(rowBytes) / chunks)
-	for i := 0; i < chunks; i++ {
-		var tokenProto []byte = nil
-		var checksum *uint32 = nil
+	for i := 0; i < len(chunkData); i++ {
+		var tokenProto *string = nil
+		var checksumToUse *uint32 = nil
+		var reset bool = false
 		// If it's the final chunk, set the token and checksum
 		if i == chunks-1 && token != "" {
-			tokenProto = []byte(token)
-			checksum = crc32cChecksum(rowBytes)
+			tokenProto = &token
+			checksumToUse = checksum
 		}
-		dataChunk := rowBytes[i*chunkSize : (i+1)*chunkSize]
-		partialResult := &btpb.ExecuteQueryResponse{
-			Response: &btpb.ExecuteQueryResponse_Results{
-				Results: &btpb.PartialResultSet{
-					PartialRows: &btpb.PartialResultSet_ProtoRowsBatch{
-						ProtoRowsBatch: &btpb.ProtoRowsBatch{
-							BatchData: dataChunk,
-						},
-					},
-					ResumeToken:   tokenProto,
-					BatchChecksum: checksum,
-				},
-			},
+		if i == 0 {
+			reset = true
 		}
+		partialResult := prsFromBytes(chunkData[i], reset, tokenProto, checksumToUse)
 		res[i] = partialResult
 	}
 
@@ -365,4 +403,17 @@ func generateBytes(n int64) []byte {
 	}
 
 	return b
+}
+
+func prepareRefreshError() *apierror.APIError {
+	status, _ := status.New(codes.FailedPrecondition, "failed precondition").WithDetails(&errdetails.PreconditionFailure{
+		Violations: []*errdetails.PreconditionFailure_Violation{
+			{
+				Type:        "PREPARED_QUERY_EXPIRED",
+				Description: "The prepared query has expired. Please re-issue the ExecuteQuery with a valid prepared query.",
+			},
+		},
+	})
+	failedPrecondition, _ := apierror.FromError(status.Err())
+	return failedPrecondition
 }
