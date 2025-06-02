@@ -1029,7 +1029,7 @@ func TestExecuteQuery_FailsOnStructMissingField(t *testing.T) {
 	assert.Equal(t, int32(codes.Internal), res.GetStatus().GetCode())
 	assertErrorIn(t, res, []string{
 		// Java error message
-		"Index 1 out of bounds for length 1",
+		"Unexpected malformed struct data",
 		// Python error message
 		"InvalidExecuteQueryResponse",
 	})
