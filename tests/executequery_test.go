@@ -1544,3 +1544,1052 @@ func TestExecuteQuery_CloseClient(t *testing.T) {
 	assert.NotEmpty(t, resultsBatchTwo[0].GetStatus().GetCode())
 	assert.NotEmpty(t, resultsBatchTwo[1].GetStatus().GetCode())
 }
+
+// Tests that a query retries successfully when the first response is a retryable error.
+func TestExecuteQuery_RetryTest_FirstResponse(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		strVal("foo"),
+		strVal("bar"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("p1"), md(columns...)),
+		},
+	)
+
+	executeRecorder := make(chan *executeQueryReqRecord, 2) // Expect 2 execute calls
+	server.ExecuteQueryFn = mockExecuteQueryFn(executeRecorder,
+		// First attempt fails with a retryable error
+		&executeQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		// Second attempt succeeds
+		&executeQueryAction{
+			response:    partialResultSet("token", expectedValues...),
+			endOfStream: true,
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets the expected data
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
+	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 2)
+	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+
+	// Check that both execute requests used the same prepared query
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+	assert.Equal(t, req1.req.GetPreparedQuery(), req2.req.GetPreparedQuery())
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
+}
+
+// Tests that a query retries successfully when a retryable error occurs mid-stream.
+func TestExecuteQuery_RetryTest_MidStream(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		strVal("foo"),
+		strVal("bar"), // This chunk will be received after retry
+		strVal("baz"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("p1"), md(columns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunk1Data, checksum1 := splitIntoChunks(1, expectedValues[0])     // First value
+	chunk2Data, checksum2 := splitIntoChunks(2, expectedValues[1:]...) // Remaining values
+
+	executeRecorder := make(chan *executeQueryReqRecord, 2) // Expect 2 execute calls
+	token1 := "resume1"
+	token2 := "resume2"
+	server.ExecuteQueryFn = mockExecuteQueryFn(executeRecorder,
+		// First attempt sends the first chunk
+		&executeQueryAction{
+			response:    prsFromBytes(chunk1Data[0], true, &token1, checksum1), // Send first chunk with resume token
+			endOfStream: false,
+		},
+		// Then fails with a retryable error
+		&executeQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		// Second attempt (resume) succeeds, sending remaining data
+		&executeQueryAction{
+			response:    prsFromBytes(chunk2Data[0], true, nil, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunk2Data[1], false, &token2, checksum2),
+			endOfStream: true,
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets all expected data combined
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
+	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 3)
+	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+
+	// Check requests: resume request should use token
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
+	assert.Nil(t, req1.req.GetResumeToken())
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
+	assert.Equal(t, []byte(token1), req2.req.GetResumeToken())
+}
+
+// Tests that ExecuteQuery uses resumption tokens even when it hasn't received result set
+// data. This can happen when a query has filtered data but not returned any yet.
+func TestExecuteQuery_RetryTest_TokenWithoutData(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		strVal("foo"),
+		strVal("bar"), // This chunk will be received after retry
+		strVal("baz"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("p1"), md(columns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunkData, checksum := splitIntoChunks(2, expectedValues...)
+
+	executeRecorder := make(chan *executeQueryReqRecord, 2) // Expect 2 execute calls
+	token1 := "resume1"
+	token2 := "resume2"
+	token3 := "resume3"
+	server.ExecuteQueryFn = mockExecuteQueryFn(executeRecorder,
+		// Send multiple tokens with no deata
+		&executeQueryAction{
+			response:    prsFromBytes(nil, true, &token1, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(nil, true, &token2, nil),
+			endOfStream: false,
+		},
+		// Then fails with a retryable error
+		&executeQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		// Second attempt (resume) succeeds, sending remaining data
+		&executeQueryAction{
+			response:    prsFromBytes(chunkData[0], true, nil, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunkData[1], false, &token3, checksum),
+			endOfStream: true,
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets all expected data combined
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
+	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 3)
+	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+
+	// Check requests: resume request should use token
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
+	assert.Nil(t, req1.req.GetResumeToken())
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
+	assert.Equal(t, []byte(token2), req2.req.GetResumeToken())
+}
+
+func TestExecuteQuery_RetryTest_ErrorAfterFinalData(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		strVal("foo"),
+		strVal("bar"), // This chunk will be received after retry
+		strVal("baz"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("p1"), md(columns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunkData, checksum := splitIntoChunks(2, expectedValues...)
+
+	executeRecorder := make(chan *executeQueryReqRecord, 2) // Expect 2 execute calls
+	token1 := "resume1"
+	server.ExecuteQueryFn = mockExecuteQueryFn(executeRecorder,
+		// Send all the data and a token
+		&executeQueryAction{
+			response:    prsFromBytes(chunkData[0], true, nil, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunkData[1], false, &token1, checksum),
+			endOfStream: false,
+		},
+		// Then fails with a retryable error
+		&executeQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		// Return OK after resumption
+		&executeQueryAction{
+			endOfStream: true,
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets all expected data combined
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
+	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 3)
+	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+
+	// Check requests: resume request should use token
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
+	assert.Nil(t, req1.req.GetResumeToken())
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
+	assert.Equal(t, []byte(token1), req2.req.GetResumeToken())
+}
+
+func TestExecuteQuery_RetryTest_ResetPartialBatch(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("bytesCol", bytesType()),
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		// row 1
+		bytesVal(generateBytes(512)),
+		strVal("foo"),
+		// row 2
+		bytesVal(generateBytes(512)),
+		strVal("bar"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("foo"), md(columns...)),
+		},
+	)
+	chunks, checksum := splitIntoChunks(3, expectedValues...)
+	token := "token"
+	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
+		// Send first chunk with reset=true and no checksum or token
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[0], true, nil, nil),
+			endOfStream: false,
+		},
+		// Send retryable error
+		&executeQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[0], true, nil, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[1], false, nil, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[2], false, &token, checksum),
+			endOfStream: true,
+		})
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy with timeout options
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the response has discarded the first chunk and parsed correctly
+	checkResultOkStatus(t, res)
+	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 2)
+	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+}
+
+func TestExecuteQuery_RetryTest_ResetCompleteBatch(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("bytesCol", bytesType()),
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		// row 1
+		bytesVal(generateBytes(512)),
+		strVal("foo"),
+		// row 2
+		bytesVal(generateBytes(512)),
+		strVal("bar"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("foo"), md(columns...)),
+		},
+	)
+	chunks, checksum := splitIntoChunks(2, expectedValues...)
+	token := "token"
+	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
+		// Send first chunk with reset=true and no checksum or token
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[0], true, nil, nil),
+			endOfStream: false,
+		},
+		// Setting checksum without a token lets the client parse the data
+		// but it should not yield it, and it should still respect 'reset'
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[1], false, nil, checksum),
+			endOfStream: false,
+		},
+		// Send retryable error
+		&executeQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[0], true, nil, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[1], false, &token, checksum),
+			endOfStream: true,
+		})
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy with timeout options
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the response has discarded the first batch and parsed correctly
+	checkResultOkStatus(t, res)
+	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 2)
+	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+}
+
+func TestExecuteQuery_ChecksumMismatch(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("bytesCol", bytesType()),
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		// row 1
+		bytesVal(generateBytes(512)),
+		strVal("foo"),
+		// row 2
+		bytesVal(generateBytes(512)),
+		strVal("bar"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("foo"), md(columns...)),
+		},
+	)
+	chunks, _ := splitIntoChunks(3, expectedValues...)
+	token := "token"
+	var badChecksum uint32 = 1234
+	server.ExecuteQueryFn = mockExecuteQueryFn(nil,
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[0], true, nil, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[1], false, nil, nil),
+			endOfStream: false,
+		},
+		// Send a bad checksum
+		&executeQueryAction{
+			response:    prsFromBytes(chunks[2], false, &token, &badChecksum),
+			endOfStream: true,
+		})
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy with timeout options
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation fails
+	assert.Equal(t, int32(codes.Internal), res.GetStatus().GetCode())
+	assertErrorIn(t, res, []string{
+		// Java error message
+		"Unexpected checksum mismatch",
+		// Python error message
+		"InvalidExecuteQueryResponse",
+	})
+}
+
+// Test a complicated scenario where we recieve data but no tokem, fail with a transient error,
+// retry, fail with a plan refresh error, and then successfully retry with an updated plan.
+func TestExecuteQuery_RetryTest_WithPlanRefresh(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	oldColumns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+		column("intCol", int64Type()),
+	}
+	refreshedColumns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		strVal("foo"),
+		strVal("bar"), // This chunk will be received after retry
+		strVal("baz"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(oldColumns...)),
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query1"), md(refreshedColumns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunkData, checksum := splitIntoChunks(3, expectedValues...)
+	executeRecorder := make(chan *executeQueryReqRecord, 3) // Expect 3 execute calls
+	token := "resume1"
+	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
+		map[string][]*executeQueryAction{
+			"query0": []*executeQueryAction{
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[0], true, nil, nil),
+					endOfStream: false,
+				},
+				// Send retryable error
+				&executeQueryAction{
+					rpcError: codes.Unavailable,
+				},
+				// Then trigger plan refresh after retry
+				&executeQueryAction{
+					apiError: prepareRefreshError(),
+				},
+			},
+			"query1": []*executeQueryAction{
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[0], true, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[1], false, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[2], false, &token, checksum),
+					endOfStream: true,
+				},
+			},
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets all expected data combined
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 3, len(executeRecorder), "Expected ExecuteQuery to be called 3 times")
+	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(refreshedColumns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 3)
+	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+
+	// Check requests: resume request should use token
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+	req3 := <-executeRecorder
+
+	assert.Equal(t, []byte("query0"), req1.req.GetPreparedQuery())
+	assert.Nil(t, req1.req.GetResumeToken())
+	assert.Equal(t, []byte("query0"), req2.req.GetPreparedQuery())
+	assert.Equal(t, []byte("query1"), req3.req.GetPreparedQuery())
+}
+
+func TestExecuteQuery_PlanRefresh(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+	}
+	expectedValues := []*btpb.Value{
+		strVal("foo"),
+		strVal("bar"), // This chunk will be received after retry
+		strVal("baz"),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(columns...)),
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query1"), md(columns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunkData, checksum := splitIntoChunks(3, expectedValues...)
+	executeRecorder := make(chan *executeQueryReqRecord, 2)
+	token := "resume1"
+	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
+		map[string][]*executeQueryAction{
+			"query0": []*executeQueryAction{
+				// Trigger plan refresh after retry
+				&executeQueryAction{
+					apiError: prepareRefreshError(),
+				},
+			},
+			"query1": []*executeQueryAction{
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[0], true, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[1], false, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[2], false, &token, checksum),
+					endOfStream: false,
+				},
+			},
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets all expected data combined
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
+	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 3)
+	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+
+	// Check requests: resume request should use token
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+
+	assert.Equal(t, []byte("query0"), req1.req.GetPreparedQuery())
+	assert.Nil(t, req1.req.GetResumeToken())
+	assert.Equal(t, []byte("query1"), req2.req.GetPreparedQuery())
+}
+
+func TestExecuteQuery_PlanRefresh_WithMetadataChange(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	oldColumns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+		column("intCol", int64Type()),
+	}
+	newColumns := []*btpb.ColumnMetadata{
+		column("bytesCol", bytesType()),
+		column("boolCol", boolType()),
+	}
+	expectedValues := []*btpb.Value{
+		// row 1
+		bytesVal([]byte("foo")), boolVal(true),
+		// row 2
+		bytesVal([]byte("bar")), boolVal(true),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(oldColumns...)),
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query1"), md(newColumns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunkData, checksum := splitIntoChunks(3, expectedValues...)
+	executeRecorder := make(chan *executeQueryReqRecord, 2)
+	token := "resume1"
+	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
+		map[string][]*executeQueryAction{
+			"query0": []*executeQueryAction{
+				// Trigger plan refresh after retry
+				&executeQueryAction{
+					apiError: prepareRefreshError(),
+				},
+			},
+			"query1": []*executeQueryAction{
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[0], true, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[1], false, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[2], false, &token, checksum),
+					endOfStream: true,
+				},
+			},
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets all expected data combined
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
+	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(newColumns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 2)
+	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+
+	// Check requests: resume request should use token
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+
+	assert.Equal(t, []byte("query0"), req1.req.GetPreparedQuery())
+	assert.Nil(t, req1.req.GetResumeToken())
+	assert.Equal(t, []byte("query1"), req2.req.GetPreparedQuery())
+}
+
+func TestExecuteQuery_PlanRefresh_AfterResumeTokenCausesError(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	columns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+		column("intCol", int64Type()),
+	}
+	expectedValues := []*btpb.Value{
+		// row 1
+		strVal("foo"), intVal(123),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(columns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunkData, checksum := splitIntoChunks(2, expectedValues...)
+	executeRecorder := make(chan *executeQueryReqRecord, 2)
+	token := "resume1"
+	server.ExecuteQueryFn = mockExecuteQueryFn(executeRecorder,
+		&executeQueryAction{
+			response:    prsFromBytes(chunkData[0], true, nil, nil),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			response:    prsFromBytes(chunkData[1], false, &token, checksum),
+			endOfStream: false,
+		},
+		&executeQueryAction{
+			apiError: prepareRefreshError(),
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation fails
+	assert.Equal(t, int32(codes.Internal), res.GetStatus().GetCode())
+	assertErrorIn(t, res, []string{
+		// Java error message
+		"Unexpected plan refresh attempt after first token",
+	})
+}
+
+func TestExecuteQuery_PlanRefresh_RespectsDeadline(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	oldColumns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+		column("intCol", int64Type()),
+	}
+	newColumns := []*btpb.ColumnMetadata{
+		column("bytesCol", bytesType()),
+		column("boolCol", boolType()),
+	}
+	server.PrepareQueryFn = mockPrepareQueryFn(nil,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(oldColumns...)),
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query1"), md(newColumns...)),
+			delayStr: "10s",
+		},
+	)
+
+	executeRecorder := make(chan *executeQueryReqRecord, 1)
+	server.ExecuteQueryFn = mockExecuteQueryFn(executeRecorder,
+		// Return a plan refresh error. Don't expect a succesful retry.
+		&executeQueryAction{
+			apiError: prepareRefreshError(),
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// Set client options with a timeout shorter than the server delay
+	opts := &clientOpts{
+		timeout: &durationpb.Duration{Seconds: 2}, // Client timeout
+	}
+	// 3. Perform the operation via test proxy with timeout options
+	res := doExecuteQueryOp(t, server, &req, opts)
+
+	// 4. Verify the operation times out and returns a DeadlineExceeded error
+	// Check the runtime to ensure it's close to the timeout, not the server delay
+	curTs := time.Now()
+	loggedReq := <-executeRecorder
+	runTimeSecs := int(curTs.Unix() - loggedReq.ts.Unix())
+	assert.GreaterOrEqual(t, runTimeSecs, 2) // Should be at least the timeout duration
+	assert.Less(t, runTimeSecs, 8)           // Should be less than the server delay (allowing buffer)
+
+	// Check the DeadlineExceeded error.
+	if res.GetStatus().GetCode() != int32(codes.DeadlineExceeded) {
+		// Some clients wrap the error code in the message
+		msg := res.GetStatus().GetMessage()
+		assert.Contains(t, strings.ToLower(strings.ReplaceAll(msg, " ", "")), "deadlineexceeded")
+	}
+}
+
+func TestExecuteQuery_PlanRefresh_Retries(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	oldColumns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+		column("intCol", int64Type()),
+	}
+	newColumns := []*btpb.ColumnMetadata{
+		column("bytesCol", bytesType()),
+		column("boolCol", boolType()),
+	}
+	expectedValues := []*btpb.Value{
+		// row 1
+		bytesVal([]byte("foo")), boolVal(true),
+		// row 2
+		bytesVal([]byte("bar")), boolVal(true),
+	}
+	prepareRecorder := make(chan *prepareQueryReqRecord, 5)
+	server.PrepareQueryFn = mockPrepareQueryFn(prepareRecorder,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(oldColumns...)),
+		},
+		&prepareQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		&prepareQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		&prepareQueryAction{
+			rpcError: codes.Unavailable,
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query1"), md(newColumns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunkData, checksum := splitIntoChunks(3, expectedValues...)
+	executeRecorder := make(chan *executeQueryReqRecord, 2)
+	token := "resume1"
+	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
+		map[string][]*executeQueryAction{
+			"query0": []*executeQueryAction{
+				// Trigger plan refresh after retry
+				&executeQueryAction{
+					apiError: prepareRefreshError(),
+				},
+			},
+			"query1": []*executeQueryAction{
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[0], true, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[1], false, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[2], false, &token, checksum),
+					endOfStream: true,
+				},
+			},
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets all expected data combined
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
+	assert.Equal(t, 5, len(prepareRecorder), "Expected prepare to be called 5 times")
+	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(newColumns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 2)
+	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+
+	// Check requests: resume request should use token
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+
+	assert.Equal(t, []byte("query0"), req1.req.GetPreparedQuery())
+	assert.Nil(t, req1.req.GetResumeToken())
+	assert.Equal(t, []byte("query1"), req2.req.GetPreparedQuery())
+}
+
+func TestExecuteQuery_PlanRefresh_RecoversAfterPermanentError(t *testing.T) {
+	// 1. Instantiate the mock server
+	server := initMockServer(t)
+	oldColumns := []*btpb.ColumnMetadata{
+		column("strCol", strType()),
+		column("intCol", int64Type()),
+	}
+	newColumns := []*btpb.ColumnMetadata{
+		column("bytesCol", bytesType()),
+		column("boolCol", boolType()),
+	}
+	expectedValues := []*btpb.Value{
+		// row 1
+		bytesVal([]byte("foo")), boolVal(true),
+		// row 2
+		bytesVal([]byte("bar")), boolVal(true),
+	}
+	prepareRecorder := make(chan *prepareQueryReqRecord, 3)
+	server.PrepareQueryFn = mockPrepareQueryFn(prepareRecorder,
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query0"), md(oldColumns...)),
+		},
+		// This will burn an attempt on the client, but it should refresh again on the next
+		// attempt and succeed
+		&prepareQueryAction{
+			rpcError: codes.Internal,
+		},
+		&prepareQueryAction{
+			response: prepareResponse([]byte("query1"), md(newColumns...)),
+		},
+	)
+
+	// Chunk the results for the successful stream part
+	chunkData, checksum := splitIntoChunks(3, expectedValues...)
+	executeRecorder := make(chan *executeQueryReqRecord, 2)
+	token := "resume1"
+	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
+		map[string][]*executeQueryAction{
+			"query0": []*executeQueryAction{
+				// Trigger plan refresh after retry
+				&executeQueryAction{
+					apiError: prepareRefreshError(),
+				},
+			},
+			"query1": []*executeQueryAction{
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[0], true, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[1], false, nil, nil),
+					endOfStream: false,
+				},
+				&executeQueryAction{
+					response:    prsFromBytes(chunkData[2], false, &token, checksum),
+					endOfStream: false,
+				},
+			},
+		},
+	)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ExecuteQueryRequest{
+		ClientId: t.Name(),
+		Request: &btpb.ExecuteQueryRequest{
+			InstanceName: instanceName,
+			Query:        "SELECT * FROM table",
+		},
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doExecuteQueryOp(t, server, &req, nil)
+
+	// 4. Verify the operation succeeds after retry and gets all expected data combined
+	checkResultOkStatus(t, res)
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
+	assert.Equal(t, 3, len(prepareRecorder), "Expected prepare to be called 3 times")
+	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(newColumns...), protocmp.Transform()))
+	assert.Equal(t, len(res.Rows), 2)
+	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+
+	// Check requests: resume request should use token
+	req1 := <-executeRecorder
+	req2 := <-executeRecorder
+
+	assert.Equal(t, []byte("query0"), req1.req.GetPreparedQuery())
+	assert.Nil(t, req1.req.GetResumeToken())
+	assert.Equal(t, []byte("query1"), req2.req.GetPreparedQuery())
+}
