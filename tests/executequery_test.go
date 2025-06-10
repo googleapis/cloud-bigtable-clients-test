@@ -1645,7 +1645,7 @@ func TestExecuteQuery_RetryTest_MidStream(t *testing.T) {
 		},
 		&executeQueryAction{
 			response:    prsFromBytes(chunk2Data[1], false, &token2, checksum2),
-			endOfStream: false,
+			endOfStream: true,
 		},
 	)
 
@@ -1680,6 +1680,8 @@ func TestExecuteQuery_RetryTest_MidStream(t *testing.T) {
 	assert.Equal(t, []byte(token1), req2.req.GetResumeToken())
 }
 
+// Tests that ExecuteQuery uses resumption tokens even when it hasn't received result set
+// data. This can happen when a query has filtered data but not returned any yet.
 func TestExecuteQuery_RetryTest_TokenWithoutData(t *testing.T) {
 	// 1. Instantiate the mock server
 	server := initMockServer(t)
@@ -2084,7 +2086,7 @@ func TestExecuteQuery_RetryTest_WithPlanRefresh(t *testing.T) {
 				},
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[2], false, &token, checksum),
-					endOfStream: false,
+					endOfStream: true,
 				},
 			},
 		},
@@ -2252,7 +2254,7 @@ func TestExecuteQuery_PlanRefresh_WithMetadataChange(t *testing.T) {
 				},
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[2], false, &token, checksum),
-					endOfStream: false,
+					endOfStream: true,
 				},
 			},
 		},
@@ -2463,7 +2465,7 @@ func TestExecuteQuery_PlanRefresh_Retries(t *testing.T) {
 				},
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[2], false, &token, checksum),
-					endOfStream: false,
+					endOfStream: true,
 				},
 			},
 		},
