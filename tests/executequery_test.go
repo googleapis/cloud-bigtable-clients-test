@@ -492,10 +492,10 @@ func TestExecuteQuery_QueryParams(t *testing.T) {
 	}
 	proxyReq := &btpb.ExecuteQueryRequest{
 		InstanceName: instanceName,
-		Query: `SELECT @stringParam AS strCol, @bytesParam as bytesCol, @int64Param AS intCol, @doubleParam AS doubleCol, 
-				@floatParam AS floatCol, @boolParam AS boolCol, @tsParam AS tsCol, @dateParam AS dateCol, 
-				@byteArrayParam AS byteArrayCol, @stringArrayParam AS stringArrayCol, @intArrayParam AS intArrayCol, 
-				@floatArrayParam AS floatArrayCol, @doubleArrayParam AS doubleArrayCol, @boolArrayParam AS boolArrayCol, 
+		Query: `SELECT @stringParam AS strCol, @bytesParam as bytesCol, @int64Param AS intCol, @doubleParam AS doubleCol,
+				@floatParam AS floatCol, @boolParam AS boolCol, @tsParam AS tsCol, @dateParam AS dateCol,
+				@byteArrayParam AS byteArrayCol, @stringArrayParam AS stringArrayCol, @intArrayParam AS intArrayCol,
+				@floatArrayParam AS floatArrayCol, @doubleArrayParam AS doubleArrayCol, @boolArrayParam AS boolArrayCol,
 				@tsArrayParam AS tsArrayCol, @dateArrayParam AS dateArrayCol`,
 		Params: params,
 	}
@@ -739,6 +739,8 @@ func TestExecuteQuery_FailsOnExecuteQueryMetadata(t *testing.T) {
 		"Expected results response, but received: METADATA",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"Response contains unknown type metadata",
 	})
 }
 
@@ -771,6 +773,8 @@ func TestExecuteQuery_FailsOnInvalidType(t *testing.T) {
 		"Column type cannot be empty",
 		// Python error message
 		"Unrecognized response data type",
+		// Nodejs error message
+		"Type undefined not supported by current client version",
 	})
 }
 
@@ -808,6 +812,8 @@ func TestExecuteQuery_FailsOnNotEnoughData(t *testing.T) {
 		"Incomplete row received",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"received incomplete row",
 	})
 }
 
@@ -846,6 +852,8 @@ func TestExecuteQuery_FailsOnNotEnoughDataWithCompleteRows(t *testing.T) {
 		"Incomplete row received",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"received incomplete row",
 	})
 }
 
@@ -883,6 +891,8 @@ func TestExecuteQuery_FailsOnTypeMismatch(t *testing.T) {
 		"Value kind must be STRING_VALUE for columns of type: STRING",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"Metadata and Value not matching",
 	})
 }
 
@@ -920,6 +930,8 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinMap(t *testing.T) {
 		"Value kind must be INT_VALUE for columns of type: INT64",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"Metadata and Value not matching",
 	})
 }
 
@@ -957,6 +969,8 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinArray(t *testing.T) {
 		"Value kind must be STRING_VALUE for columns of type: STRING",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"Metadata and Value not matching",
 	})
 }
 
@@ -995,6 +1009,8 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinStruct(t *testing.T) {
 		"Value kind must be INT_VALUE for columns of type: INT64",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"Metadata and Value not matching",
 	})
 }
 
@@ -1032,6 +1048,8 @@ func TestExecuteQuery_FailsOnStructMissingField(t *testing.T) {
 		"Unexpected malformed struct data",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"received Struct with 1 values, but metadata has 2 fields",
 	})
 }
 
@@ -2026,6 +2044,8 @@ func TestExecuteQuery_ChecksumMismatch(t *testing.T) {
 		"Unexpected checksum mismatch",
 		// Python error message
 		"InvalidExecuteQueryResponse",
+		// Nodejs error message
+		"Failed to validate next batch of results",
 	})
 }
 
@@ -2342,6 +2362,8 @@ func TestExecuteQuery_PlanRefresh_AfterResumeTokenCausesError(t *testing.T) {
 	assertErrorIn(t, res, []string{
 		// Java error message
 		"Unexpected plan refresh attempt after first token",
+		// Nodejs error message
+		"Query plan expired during a retry attempt",
 	})
 }
 
