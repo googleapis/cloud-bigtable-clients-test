@@ -29,10 +29,15 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
+	testpb "github.com/googleapis/cloud-bigtable-clients-test/tests/testdata"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -101,6 +106,25 @@ func assertErrorIn(t *testing.T, res *testproxypb.ExecuteQueryResult, messages [
 	if !foundMatch {
 		assert.Fail(t, "Got unexpected message: "+res.GetStatus().GetMessage())
 	}
+}
+
+// Returns a FileDescriptorSet containing the proto file descriptors for the provided proto messages.
+// Messages must be provided in dependency order.
+func buildFileDescriptorSet(msgs ...proto.Message) *descriptorpb.FileDescriptorSet {
+	files := protoregistry.GlobalFiles
+	seen := make(map[string]bool)
+	fds := &descriptorpb.FileDescriptorSet{}
+
+	for _, msg := range msgs {
+		filePath := msg.ProtoReflect().Descriptor().ParentFile().Path()
+		if !seen[filePath] {
+			if fd, err := files.FindFileByPath(filePath); err == nil && fd != nil {
+				fds.File = append(fds.File, protodesc.ToFileDescriptorProto(fd))
+				seen[filePath] = true
+			}
+		}
+	}
+	return fds
 }
 
 // Tests that a query will run successfully when receiving a response with no rows
@@ -209,7 +233,20 @@ func TestExecuteQuery_TypesTest(t *testing.T) {
 			arrayType(structType(
 				structField("timestamp", timestampType()),
 				structField("value", bytesType()))))),
+		column("protoCol", protoType(string(proto.MessageName(&testpb.Album{})))),
+		column("enumCol", enumType(string(testpb.Format(0).Descriptor().FullName()))),
 	}
+
+	album := &testpb.Album{
+		Title: "Lover",
+		Artist: &testpb.Singer{
+			Name: "Taylor Swift",
+		},
+		ReleaseYear: 2020,
+		Format:      testpb.Format_CD,
+	}
+	serializedAlbum, _ := proto.Marshal(album)
+
 	expectedValues := []*btpb.Value{
 		strVal("strVal"),
 		bytesVal([]byte("bytesVal")),
@@ -225,6 +262,8 @@ func TestExecuteQuery_TypesTest(t *testing.T) {
 		mapVal(mapEntry(bytesVal([]byte("key")), arrayVal(
 			structVal(timestampVal(10000, 1000), bytesVal([]byte("val1"))),
 			structVal(timestampVal(20000, 1000), bytesVal([]byte("val2")))))),
+		bytesVal(serializedAlbum),
+		intVal(1),
 	}
 	server.PrepareQueryFn = mockPrepareQueryFn(nil,
 		&prepareQueryAction{
@@ -246,12 +285,13 @@ func TestExecuteQuery_TypesTest(t *testing.T) {
 			InstanceName: instanceName,
 			Query:        "SELECT * FROM table",
 		},
+		FileDescriptorSet: buildFileDescriptorSet(&testpb.Singer{}, &testpb.Album{}),
 	}
 	// 3. Perform the operation via test proxy
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds and gets the expected metadata & data
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 12)
+	assert.Equal(t, len(res.Metadata.Columns), 14)
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
 	assert.Equal(t, len(res.Rows), 1)
 	assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
