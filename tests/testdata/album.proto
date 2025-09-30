@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+import "tests/testdata/singer.proto";
+
+package execute_query.test;
+option go_package = "github.com/googleapis/cloud-bigtable-clients-test/tests/testdata;testpb";
+
+enum Format {
+  CD = 0;
+  DIGITAL = 1;
+}
+
+message Album {
+  Singer artist = 1;
+  string title = 2;
+  int32 release_year = 3;
+  Format format = 4;
+}

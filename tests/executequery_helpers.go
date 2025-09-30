@@ -162,6 +162,26 @@ func mapType(key *btpb.Type, value *btpb.Type) *btpb.Type {
 	}
 }
 
+func protoType(name string) *btpb.Type {
+	return &btpb.Type{
+		Kind: &btpb.Type_ProtoType{
+			ProtoType: &btpb.Type_Proto{
+				MessageName: name,
+			},
+		},
+	}
+}
+
+func enumType(name string) *btpb.Type {
+	return &btpb.Type{
+		Kind: &btpb.Type_EnumType{
+			EnumType: &btpb.Type_Enum{
+				EnumName: name,
+			},
+		},
+	}
+}
+
 func strVal(v string) *btpb.Value {
 	return &btpb.Value{
 		Kind: &btpb.Value_StringValue{
