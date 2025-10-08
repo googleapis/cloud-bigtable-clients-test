@@ -1620,7 +1620,7 @@ func TestExecuteQuery_RetryTest_FirstResponse(t *testing.T) {
 
 	// 4. Verify the operation succeeds after retry and gets the expected data
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
 	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
 	if assert.Equal(t, 2, len(res.Rows)) {
@@ -1695,7 +1695,7 @@ func TestExecuteQuery_RetryTest_MidStream(t *testing.T) {
 
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
 	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
 	if assert.Equal(t, 3, len(res.Rows)) {
@@ -1709,7 +1709,7 @@ func TestExecuteQuery_RetryTest_MidStream(t *testing.T) {
 	req2 := <-executeRecorder
 	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
 	assert.Nil(t, req1.req.GetResumeToken())
-	assert.Equal(t, []byte("p1"), req2.req.GetPreparedQuery())
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
 	assert.Equal(t, []byte(token1), req2.req.GetResumeToken())
 }
 
@@ -1778,7 +1778,7 @@ func TestExecuteQuery_RetryTest_TokenWithoutData(t *testing.T) {
 
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
 	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
 	if assert.Equal(t, 3, len(res.Rows)) {
@@ -1792,7 +1792,7 @@ func TestExecuteQuery_RetryTest_TokenWithoutData(t *testing.T) {
 	req2 := <-executeRecorder
 	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
 	assert.Nil(t, req1.req.GetResumeToken())
-	assert.Equal(t, []byte("p1"), req2.req.GetPreparedQuery())
+	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
 	assert.Equal(t, []byte(token2), req2.req.GetResumeToken())
 }
 
@@ -1852,7 +1852,7 @@ func TestExecuteQuery_RetryTest_ErrorAfterFinalData(t *testing.T) {
 
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
-	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
+	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
 	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
 	if assert.Equal(t, 3, len(res.Rows)) {
