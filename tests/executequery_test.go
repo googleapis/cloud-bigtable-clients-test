@@ -129,9 +129,9 @@ func TestExecuteQuery_EmptyResponse(t *testing.T) {
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds, gets the expected metadata, and the client sends the requests properly
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(column("test", strType())), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 0)
+	assert.Equal(t, 0, len(res.Rows))
 
 	expectedPrepareReq := &btpb.PrepareQueryRequest{
 		InstanceName: instanceName,
@@ -177,10 +177,11 @@ func TestExecuteQuery_SingleSimpleRow(t *testing.T) {
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds, gets the expected metadata & data, and the client sends the request properly
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(column("test", strType())), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 1)
-	assertRowEqual(t, testProxyRow(strVal("foo")), res.Rows[0], res.Metadata)
+	if assert.Equal(t, 1, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(strVal("foo")), res.Rows[0], res.Metadata)
+	}
 }
 
 // Tests that a query runs successfully for various data types
@@ -251,10 +252,11 @@ func TestExecuteQuery_TypesTest(t *testing.T) {
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds and gets the expected metadata & data
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 12)
+	assert.Equal(t, 12, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 1)
-	assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
+	if assert.Equal(t, 1, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
+	}
 }
 
 // Tests that a query runs successfully when receiving NULL values for various data types
@@ -314,10 +316,11 @@ func TestExecuteQuery_NullsTest(t *testing.T) {
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds and gets the expected metadata & data
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 12)
+	assert.Equal(t, 12, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 1)
-	assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
+	if assert.Equal(t, 1, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
+	}
 }
 
 // Tests that a query runs successfully when receiving nested NULL values within complex types
@@ -364,10 +367,11 @@ func TestExecuteQuery_NestedNullsTest(t *testing.T) {
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds and gets the expected metadata & data
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 3)
+	assert.Equal(t, 3, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 1)
-	assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
+	if assert.Equal(t, 1, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
+	}
 }
 
 // Tests that a query runs successfully when receiving a map with duplicate keys
@@ -406,11 +410,12 @@ func TestExecuteQuery_MapAllowsDuplicateKey(t *testing.T) {
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds and gets the expected metadata & data (last value wins for duplicate key)
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 1)
-	// For values with duplicate keys, the last value should win.
-	assertRowEqual(t, testProxyRow(mapVal(mapEntry(bytesVal([]byte("foo")), strVal("bar")))), res.Rows[0], res.Metadata)
+	if assert.Equal(t, 1, len(res.Rows)) {
+		// For values with duplicate keys, the last value should win.
+		assertRowEqual(t, testProxyRow(mapVal(mapEntry(bytesVal([]byte("foo")), strVal("bar")))), res.Rows[0], res.Metadata)
+	}
 }
 
 // Tests that a query with parameters runs successfully
@@ -515,10 +520,11 @@ func TestExecuteQuery_QueryParams(t *testing.T) {
 	checkResultOkStatus(t, res)
 	loggedReq := <-recorder
 	assert.True(t, cmp.Equal(loggedReq.req, expectedReq, protocmp.Transform(), cmpopts.EquateApprox(0, 0.0001)))
-	assert.Equal(t, len(res.Metadata.Columns), 16)
+	assert.Equal(t, 16, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 1)
-	assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
+	if assert.Equal(t, 1, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues...), res.Rows[0], res.Metadata)
+	}
 }
 
 // Tests that a query runs successfully when results are chunked within a single response stream
@@ -578,11 +584,12 @@ func TestExecuteQuery_ChunkingTest(t *testing.T) {
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds and reconstructs the expected metadata & data from chunks
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 3)
+	assert.Equal(t, 3, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 2)
-	assertRowEqual(t, testProxyRow(expectedValues[0:3]...), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[3:6]...), res.Rows[1], res.Metadata)
+	if assert.Equal(t, 2, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0:3]...), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[3:6]...), res.Rows[1], res.Metadata)
+	}
 }
 
 // Tests that a query runs successfully when results are split across multiple response streams (batches)
@@ -657,13 +664,14 @@ func TestExecuteQuery_BatchesTest(t *testing.T) {
 	res := doExecuteQueryOp(t, server, &req, nil)
 	// 4. Verify the read succeeds and reconstructs all expected metadata & data from batches
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 3)
+	assert.Equal(t, 3, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 4)
-	assertRowEqual(t, testProxyRow(expectedValues[0:3]...), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[3:6]...), res.Rows[1], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[6:9]...), res.Rows[2], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[9:12]...), res.Rows[3], res.Metadata)
+	if assert.Equal(t, 4, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0:3]...), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[3:6]...), res.Rows[1], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[6:9]...), res.Rows[2], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[9:12]...), res.Rows[3], res.Metadata)
+	}
 }
 
 // Tests that the operation fails if PrepareQuery returns empty metadata
@@ -1329,25 +1337,25 @@ func TestExecuteQuery_ConcurrentRequests(t *testing.T) {
 	server := initMockServer(t)
 	prepareRecorder := make(chan *prepareQueryReqRecord, 2)
 	prepareQueryMap := map[string]*prepareQueryAction{
-		"query0": &prepareQueryAction{
+		"query0": {
 			response: prepareResponse([]byte("query0"), md(
 				column("strCol", strType()),
 			)),
 			delayStr: "2s",
 		},
-		"query1": &prepareQueryAction{
+		"query1": {
 			response: prepareResponse([]byte("query1"), md(column("intCol", int64Type()), column("boolCol", boolType()))),
 			delayStr: "2s",
 		},
-		"query2": &prepareQueryAction{
+		"query2": {
 			response: prepareResponse([]byte("query2"), md(column("mapCol", mapType(strType(), strType())), column("strCol", strType()))),
 			delayStr: "2s",
 		},
-		"query3": &prepareQueryAction{
+		"query3": {
 			response: prepareResponse([]byte("query3"), md(column("strCol", strType()), column("bytesCol", bytesType()))),
 			delayStr: "2s",
 		},
-		"query4": &prepareQueryAction{
+		"query4": {
 			response: prepareResponse([]byte("query4"), md(column("arrayOfString", arrayType(strType())))),
 			delayStr: "2s",
 		},
@@ -1356,13 +1364,13 @@ func TestExecuteQuery_ConcurrentRequests(t *testing.T) {
 
 	recorder := make(chan *executeQueryReqRecord, concurrency)
 	actionSequences := map[string][]*executeQueryAction{
-		"query0": []*executeQueryAction{
+		"query0": {
 			&executeQueryAction{
 				response:    partialResultSet("token", strVal("foo"), strVal("bar"), strVal("baz")),
 				endOfStream: true,
 			},
 		},
-		"query1": []*executeQueryAction{
+		"query1": {
 			&executeQueryAction{
 				response:    partialResultSet("token", intVal(1), boolVal(true)),
 				delayStr:    "2s",
@@ -1374,19 +1382,19 @@ func TestExecuteQuery_ConcurrentRequests(t *testing.T) {
 				endOfStream: true,
 			},
 		},
-		"query2": []*executeQueryAction{
+		"query2": {
 			&executeQueryAction{
 				response:    partialResultSet("token", mapVal(mapEntry(strVal("k"), strVal("v"))), strVal("foo")),
 				delayStr:    "2s",
 				endOfStream: true,
 			},
 		},
-		"query3": []*executeQueryAction{
+		"query3": {
 			&executeQueryAction{
 				endOfStream: true,
 			},
 		},
-		"query4": []*executeQueryAction{
+		"query4": {
 			&executeQueryAction{
 				response:    partialResultSet("token", arrayVal(strVal("e1"), strVal("e2")), arrayVal(strVal("f1"), strVal("f2"))),
 				delayStr:    "2s",
@@ -1413,41 +1421,45 @@ func TestExecuteQuery_ConcurrentRequests(t *testing.T) {
 
 	// request1
 	checkResultOkStatus(t, results[0])
-	assert.Equal(t, len(results[0].Metadata.Columns), 1)
+	assert.Equal(t, 1, len(results[0].Metadata.Columns))
 	assert.True(t, cmp.Equal(results[0].Metadata, testProxyMd(column("strCol", strType())), protocmp.Transform()))
-	assert.Equal(t, len(results[0].Rows), 3)
-	assertRowEqual(t, testProxyRow(strVal("foo")), results[0].Rows[0], results[0].Metadata)
-	assertRowEqual(t, testProxyRow(strVal("bar")), results[0].Rows[1], results[0].Metadata)
-	assertRowEqual(t, testProxyRow(strVal("baz")), results[0].Rows[2], results[0].Metadata)
+	if assert.Equal(t, 3, len(results[0].Rows)) {
+		assertRowEqual(t, testProxyRow(strVal("foo")), results[0].Rows[0], results[0].Metadata)
+		assertRowEqual(t, testProxyRow(strVal("bar")), results[0].Rows[1], results[0].Metadata)
+		assertRowEqual(t, testProxyRow(strVal("baz")), results[0].Rows[2], results[0].Metadata)
+	}
 
 	// request2
 	checkResultOkStatus(t, results[1])
-	assert.Equal(t, len(results[1].Metadata.Columns), 2)
+	assert.Equal(t, 2, len(results[1].Metadata.Columns))
 	assert.True(t, cmp.Equal(results[1].Metadata, testProxyMd(column("intCol", int64Type()), column("boolCol", boolType())), protocmp.Transform()))
-	assert.Equal(t, len(results[1].Rows), 2)
-	assertRowEqual(t, testProxyRow(intVal(1), boolVal(true)), results[1].Rows[0], results[1].Metadata)
-	assertRowEqual(t, testProxyRow(intVal(2), boolVal(false)), results[1].Rows[1], results[1].Metadata)
+	if assert.Equal(t, 2, len(results[1].Rows)) {
+		assertRowEqual(t, testProxyRow(intVal(1), boolVal(true)), results[1].Rows[0], results[1].Metadata)
+		assertRowEqual(t, testProxyRow(intVal(2), boolVal(false)), results[1].Rows[1], results[1].Metadata)
+	}
 
 	// request3
 	checkResultOkStatus(t, results[2])
-	assert.Equal(t, len(results[2].Metadata.Columns), 2)
+	assert.Equal(t, 2, len(results[2].Metadata.Columns))
 	assert.True(t, cmp.Equal(results[2].Metadata, testProxyMd(column("mapCol", mapType(strType(), strType())), column("strCol", strType())), protocmp.Transform()))
-	assert.Equal(t, len(results[2].Rows), 1)
-	assertRowEqual(t, testProxyRow(mapVal(mapEntry(strVal("k"), strVal("v"))), strVal("foo")), results[2].Rows[0], results[2].Metadata)
+	if assert.Equal(t, 1, len(results[2].Rows)) {
+		assertRowEqual(t, testProxyRow(mapVal(mapEntry(strVal("k"), strVal("v"))), strVal("foo")), results[2].Rows[0], results[2].Metadata)
+	}
 
 	// request4
 	checkResultOkStatus(t, results[3])
-	assert.Equal(t, len(results[3].Metadata.Columns), 2)
+	assert.Equal(t, 2, len(results[3].Metadata.Columns))
 	assert.True(t, cmp.Equal(results[3].Metadata, testProxyMd(column("strCol", strType()), column("bytesCol", bytesType())), protocmp.Transform()))
-	assert.Equal(t, len(results[3].Rows), 0)
+	assert.Equal(t, 0, len(results[3].Rows))
 
 	// request5
 	checkResultOkStatus(t, results[4])
-	assert.Equal(t, len(results[4].Metadata.Columns), 1)
+	assert.Equal(t, 1, len(results[4].Metadata.Columns))
 	assert.True(t, cmp.Equal(results[4].Metadata, testProxyMd(column("arrayOfString", arrayType(strType()))), protocmp.Transform()))
-	assert.Equal(t, len(results[4].Rows), 2)
-	assertRowEqual(t, testProxyRow(arrayVal(strVal("e1"), strVal("e2"))), results[4].Rows[0], results[4].Metadata)
-	assertRowEqual(t, testProxyRow(arrayVal(strVal("f1"), strVal("f2"))), results[4].Rows[1], results[4].Metadata)
+	if assert.Equal(t, 2, len(results[4].Rows)) {
+		assertRowEqual(t, testProxyRow(arrayVal(strVal("e1"), strVal("e2"))), results[4].Rows[0], results[4].Metadata)
+		assertRowEqual(t, testProxyRow(arrayVal(strVal("f1"), strVal("f2"))), results[4].Rows[1], results[4].Metadata)
+	}
 }
 
 // tests that client doesn't kill inflight requests after client closing, but will reject new requests.
@@ -1482,7 +1494,7 @@ func TestExecuteQuery_CloseClient(t *testing.T) {
 
 	executeRecorder := make(chan *executeQueryReqRecord, 4)
 	repeatedExecuteAction := []*executeQueryAction{
-		&executeQueryAction{
+		{
 			response:    partialResultSet("token", strVal("foo")),
 			delayStr:    "2s",
 			endOfStream: true,
@@ -1499,14 +1511,14 @@ func TestExecuteQuery_CloseClient(t *testing.T) {
 
 	// Will be finished
 	reqsBatchOne := []*testproxypb.ExecuteQueryRequest{
-		&testproxypb.ExecuteQueryRequest{
+		{
 			ClientId: t.Name(),
 			Request: &btpb.ExecuteQueryRequest{
 				InstanceName: instanceName,
 				Query:        "query0",
 			},
 		},
-		&testproxypb.ExecuteQueryRequest{
+		{
 			ClientId: t.Name(),
 			Request: &btpb.ExecuteQueryRequest{
 				InstanceName: instanceName,
@@ -1516,14 +1528,14 @@ func TestExecuteQuery_CloseClient(t *testing.T) {
 	}
 	// Will be rejected by client
 	reqsBatchTwo := []*testproxypb.ExecuteQueryRequest{
-		&testproxypb.ExecuteQueryRequest{
+		{
 			ClientId: t.Name(),
 			Request: &btpb.ExecuteQueryRequest{
 				InstanceName: instanceName,
 				Query:        "query2",
 			},
 		},
-		&testproxypb.ExecuteQueryRequest{
+		{
 			ClientId: t.Name(),
 			Request: &btpb.ExecuteQueryRequest{
 				InstanceName: instanceName,
@@ -1552,10 +1564,11 @@ func TestExecuteQuery_CloseClient(t *testing.T) {
 		if resCode == int32(codes.Canceled) {
 			continue
 		}
-		assert.Equal(t, len(resultsBatchOne[i].Metadata.Columns), 1)
+		assert.Equal(t, 1, len(resultsBatchOne[i].Metadata.Columns))
 		assert.True(t, cmp.Equal(resultsBatchOne[i].Metadata, testProxyMd(column("strCol", strType())), protocmp.Transform()))
-		assert.Equal(t, len(resultsBatchOne[i].Rows), 1)
-		assertRowEqual(t, testProxyRow(strVal("foo")), resultsBatchOne[i].Rows[0], resultsBatchOne[i].Metadata)
+		if assert.Equal(t, 1, len(resultsBatchOne[i].Rows)) {
+			assertRowEqual(t, testProxyRow(strVal("foo")), resultsBatchOne[i].Rows[0], resultsBatchOne[i].Metadata)
+		}
 	}
 
 	// Check that all the batch-two requests failed at the proxy level
@@ -1608,16 +1621,17 @@ func TestExecuteQuery_RetryTest_FirstResponse(t *testing.T) {
 	// 4. Verify the operation succeeds after retry and gets the expected data
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 2)
-	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+	if assert.Equal(t, 2, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+	}
 
 	// Check that both execute requests used the same prepared query
 	req1 := <-executeRecorder
 	req2 := <-executeRecorder
-	assert.Equal(t, req1.req.GetPreparedQuery(), req2.req.GetPreparedQuery())
+	assert.Equal(t, req2.req.GetPreparedQuery(), req1.req.GetPreparedQuery())
 	assert.Equal(t, []byte("p1"), req1.req.GetPreparedQuery())
 }
 
@@ -1682,12 +1696,13 @@ func TestExecuteQuery_RetryTest_MidStream(t *testing.T) {
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 3)
-	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	if assert.Equal(t, 3, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	}
 
 	// Check requests: resume request should use token
 	req1 := <-executeRecorder
@@ -1764,12 +1779,13 @@ func TestExecuteQuery_RetryTest_TokenWithoutData(t *testing.T) {
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 3)
-	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	if assert.Equal(t, 3, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	}
 
 	// Check requests: resume request should use token
 	req1 := <-executeRecorder
@@ -1837,12 +1853,13 @@ func TestExecuteQuery_RetryTest_ErrorAfterFinalData(t *testing.T) {
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice") // Verify retry happened
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 3)
-	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	if assert.Equal(t, 3, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	}
 
 	// Check requests: resume request should use token
 	req1 := <-executeRecorder
@@ -1912,11 +1929,12 @@ func TestExecuteQuery_RetryTest_ResetPartialBatch(t *testing.T) {
 
 	// 4. Verify the response has discarded the first chunk and parsed correctly
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.Equal(t, 2, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 2)
-	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	if assert.Equal(t, 2, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	}
 }
 
 func TestExecuteQuery_RetryTest_ResetCompleteBatch(t *testing.T) {
@@ -1980,11 +1998,12 @@ func TestExecuteQuery_RetryTest_ResetCompleteBatch(t *testing.T) {
 
 	// 4. Verify the response has discarded the first batch and parsed correctly
 	checkResultOkStatus(t, res)
-	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.Equal(t, 2, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 2)
-	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	if assert.Equal(t, 2, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	}
 }
 
 func TestExecuteQuery_ChecksumMismatch(t *testing.T) {
@@ -2081,7 +2100,7 @@ func TestExecuteQuery_RetryTest_WithPlanRefresh(t *testing.T) {
 	token := "resume1"
 	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
 		map[string][]*executeQueryAction{
-			"query0": []*executeQueryAction{
+			"query0": {
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[0], true, nil, nil),
 					endOfStream: false,
@@ -2095,7 +2114,7 @@ func TestExecuteQuery_RetryTest_WithPlanRefresh(t *testing.T) {
 					apiError: prepareRefreshError(),
 				},
 			},
-			"query1": []*executeQueryAction{
+			"query1": {
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[0], true, nil, nil),
 					endOfStream: false,
@@ -2127,12 +2146,13 @@ func TestExecuteQuery_RetryTest_WithPlanRefresh(t *testing.T) {
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 3, len(executeRecorder), "Expected ExecuteQuery to be called 3 times")
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(refreshedColumns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 3)
-	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	if assert.Equal(t, 3, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	}
 
 	// Check requests: resume request should use token
 	req1 := <-executeRecorder
@@ -2171,13 +2191,13 @@ func TestExecuteQuery_PlanRefresh(t *testing.T) {
 	token := "resume1"
 	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
 		map[string][]*executeQueryAction{
-			"query0": []*executeQueryAction{
+			"query0": {
 				// Trigger plan refresh after retry
 				&executeQueryAction{
 					apiError: prepareRefreshError(),
 				},
 			},
-			"query1": []*executeQueryAction{
+			"query1": {
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[0], true, nil, nil),
 					endOfStream: false,
@@ -2209,12 +2229,13 @@ func TestExecuteQuery_PlanRefresh(t *testing.T) {
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
-	assert.Equal(t, len(res.Metadata.Columns), 1)
+	assert.Equal(t, 1, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(columns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 3)
-	assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	if assert.Equal(t, 3, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0]), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[1]), res.Rows[1], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2]), res.Rows[2], res.Metadata)
+	}
 
 	// Check requests: resume request should use token
 	req1 := <-executeRecorder
@@ -2257,13 +2278,13 @@ func TestExecuteQuery_PlanRefresh_WithMetadataChange(t *testing.T) {
 	token := "resume1"
 	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
 		map[string][]*executeQueryAction{
-			"query0": []*executeQueryAction{
+			"query0": {
 				// Trigger plan refresh after retry
 				&executeQueryAction{
 					apiError: prepareRefreshError(),
 				},
 			},
-			"query1": []*executeQueryAction{
+			"query1": {
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[0], true, nil, nil),
 					endOfStream: false,
@@ -2295,11 +2316,12 @@ func TestExecuteQuery_PlanRefresh_WithMetadataChange(t *testing.T) {
 	// 4. Verify the operation succeeds after retry and gets all expected data combined
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
-	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.Equal(t, 2, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(newColumns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 2)
-	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	if assert.Equal(t, 2, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	}
 
 	// Check requests: resume request should use token
 	req1 := <-executeRecorder
@@ -2470,13 +2492,13 @@ func TestExecuteQuery_PlanRefresh_Retries(t *testing.T) {
 	token := "resume1"
 	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
 		map[string][]*executeQueryAction{
-			"query0": []*executeQueryAction{
+			"query0": {
 				// Trigger plan refresh after retry
 				&executeQueryAction{
 					apiError: prepareRefreshError(),
 				},
 			},
-			"query1": []*executeQueryAction{
+			"query1": {
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[0], true, nil, nil),
 					endOfStream: false,
@@ -2509,11 +2531,12 @@ func TestExecuteQuery_PlanRefresh_Retries(t *testing.T) {
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
 	assert.Equal(t, 5, len(prepareRecorder), "Expected prepare to be called 5 times")
-	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.Equal(t, 2, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(newColumns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 2)
-	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	if assert.Equal(t, 2, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	}
 
 	// Check requests: resume request should use token
 	req1 := <-executeRecorder
@@ -2562,13 +2585,13 @@ func TestExecuteQuery_PlanRefresh_RecoversAfterPermanentError(t *testing.T) {
 	token := "resume1"
 	server.ExecuteQueryFn = mockExecuteQueryFnWithMetadata(executeRecorder, nil,
 		map[string][]*executeQueryAction{
-			"query0": []*executeQueryAction{
+			"query0": {
 				// Trigger plan refresh after retry
 				&executeQueryAction{
 					apiError: prepareRefreshError(),
 				},
 			},
-			"query1": []*executeQueryAction{
+			"query1": {
 				&executeQueryAction{
 					response:    prsFromBytes(chunkData[0], true, nil, nil),
 					endOfStream: false,
@@ -2601,11 +2624,12 @@ func TestExecuteQuery_PlanRefresh_RecoversAfterPermanentError(t *testing.T) {
 	checkResultOkStatus(t, res)
 	assert.Equal(t, 2, len(executeRecorder), "Expected ExecuteQuery to be called twice")
 	assert.Equal(t, 3, len(prepareRecorder), "Expected prepare to be called 3 times")
-	assert.Equal(t, len(res.Metadata.Columns), 2)
+	assert.Equal(t, 2, len(res.Metadata.Columns))
 	assert.True(t, cmp.Equal(res.Metadata, testProxyMd(newColumns...), protocmp.Transform()))
-	assert.Equal(t, len(res.Rows), 2)
-	assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
-	assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	if assert.Equal(t, 2, len(res.Rows)) {
+		assertRowEqual(t, testProxyRow(expectedValues[0:2]...), res.Rows[0], res.Metadata)
+		assertRowEqual(t, testProxyRow(expectedValues[2:4]...), res.Rows[1], res.Metadata)
+	}
 
 	// Check requests: resume request should use token
 	req1 := <-executeRecorder
