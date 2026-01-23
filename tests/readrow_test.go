@@ -180,7 +180,9 @@ func TestReadRow_NoRetry_CommitInSeparateChunk(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, "", cmp.Diff(expectedRow, res.Row, protocmp.Transform()))
+	assert.Equal(t, "", cmp.Diff(expectedRow, res.Row, protocmp.Transform(), protocmp.SortRepeated(func(x, y *btpb.Family) bool {
+		return x.Name < y.Name
+	})))
 }
 
 // TestReadRow_Generic_MultiStreams tests that client can have multiple concurrent streams.
