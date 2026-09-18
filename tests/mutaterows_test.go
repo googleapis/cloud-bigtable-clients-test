@@ -582,10 +582,8 @@ func TestMutateRows_NoRetry_MissingResponseEntry(t *testing.T) {
 
 	// 4c. Check that only entry 1 is reported as failed in res.GetEntries()
 	assert.Equal(t, 1, len(res.GetEntries()))
-	if len(res.GetEntries()) == 1 {
-		assert.Equal(t, int64(1), res.GetEntries()[0].GetIndex())
-		assert.NotEqual(t, int32(codes.OK), res.GetEntries()[0].GetStatus().GetCode())
-	}
+	assert.Equal(t, int64(1), res.GetEntries()[0].GetIndex())
+	assert.NotEqual(t, int32(codes.OK), res.GetEntries()[0].GetStatus().GetCode())
 }
 
 // TestMutateRows_NoRetry_ErrorNotificationParity tests that entry-level errors result in a non-OK top-level status.
@@ -621,8 +619,6 @@ func TestMutateRows_NoRetry_ErrorNotificationParity(t *testing.T) {
 
 	// 4c. Check the number of failed entries in the result
 	assert.Equal(t, 1, len(res.GetEntries()))
-	if len(res.GetEntries()) == 1 {
-		assert.Equal(t, int64(1), res.GetEntries()[0].GetIndex())
-		assert.Equal(t, int32(codes.PermissionDenied), res.GetEntries()[0].GetStatus().GetCode())
-	}
+	assert.Equal(t, int64(1), res.GetEntries()[0].GetIndex())
+	assert.Equal(t, int32(codes.PermissionDenied), res.GetEntries()[0].GetStatus().GetCode())
 }
