@@ -57,6 +57,10 @@ type Server struct {
 	ExecuteQueryFn func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error
 	// PrepareQueryFn mocks PrepareQuery
 	PrepareQueryFn func(context.Context, *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error)
+	// PingAndWarmFn mocks PingAndWarm. Optional: when nil the server
+	// returns an empty response so client-side channel priming
+	// succeeds against the fake without any per-test setup.
+	PingAndWarmFn func(context.Context, *btpb.PingAndWarmRequest) (*btpb.PingAndWarmResponse, error)
 }
 
 // NewServer creates a new Server.
@@ -153,4 +157,16 @@ func (s *Server) PrepareQuery(ctx context.Context, req *btpb.PrepareQueryRequest
 		return s.PrepareQueryFn(ctx, req)
 	}
 	return nil, status.Error(codes.Unimplemented, "unimplemented - you need to attach a PrepareQueryFn to the server")
+}
+
+// PingAndWarm implements PingAndWarm of the BigtableServer interface.
+// Client-side channel priming (Direct-Path or classic pool warmup)
+// issues PingAndWarm on every managed conn; without an override we
+// answer with an empty response so priming succeeds and tests that
+// only exercise data-plane RPCs don't have to attach anything here.
+func (s *Server) PingAndWarm(ctx context.Context, req *btpb.PingAndWarmRequest) (*btpb.PingAndWarmResponse, error) {
+	if s.PingAndWarmFn != nil {
+		return s.PingAndWarmFn(ctx, req)
+	}
+	return &btpb.PingAndWarmResponse{}, nil
 }
