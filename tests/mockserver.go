@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // Server is an in-memory Cloud Bigtable fake.
@@ -35,8 +36,8 @@ type Server struct {
 	l   net.Listener
 	srv *grpc.Server
 
-	// Any unimplemented methods will cause a panic when called.
-	btpb.BigtableServer
+	// Any unimplemented methods (e.g. GetClientConfiguration) will return codes.Unimplemented.
+	btpb.UnimplementedBigtableServer
 
 	// Assign new functions to these parameters to implement specific mock
 	// functionality.
@@ -57,6 +58,10 @@ type Server struct {
 	ExecuteQueryFn func(*btpb.ExecuteQueryRequest, btpb.Bigtable_ExecuteQueryServer) error
 	// PrepareQueryFn mocks PrepareQuery
 	PrepareQueryFn func(context.Context, *btpb.PrepareQueryRequest) (*btpb.PrepareQueryResponse, error)
+	// TypedReadRowsFn mocks TypedReadRows
+	TypedReadRowsFn func(*btpb.TypedReadRowsRequest, btpb.Bigtable_TypedReadRowsServer) error
+	// DisableTypedReadRowsAutoSchema disables automatic TableSchema injection on first response.
+	DisableTypedReadRowsAutoSchema bool
 }
 
 // NewServer creates a new Server.
@@ -153,4 +158,37 @@ func (s *Server) PrepareQuery(ctx context.Context, req *btpb.PrepareQueryRequest
 		return s.PrepareQueryFn(ctx, req)
 	}
 	return nil, status.Error(codes.Unimplemented, "unimplemented - you need to attach a PrepareQueryFn to the server")
+}
+
+// typedReadRowsServerWrapper intercepts Send() to automatically stamp an empty TableSchema
+// on the first message of a stream unless DisableTypedReadRowsAutoSchema is set on Server.
+type typedReadRowsServerWrapper struct {
+	btpb.Bigtable_TypedReadRowsServer
+	autoSchema bool
+	firstSent  bool
+}
+
+func (w *typedReadRowsServerWrapper) Send(resp *btpb.TypedReadRowsResponse) error {
+	// Clone before mutating: `resp` is owned by the test, and the same response value may be
+	// reused across actions or streams.
+	resp = proto.Clone(resp).(*btpb.TypedReadRowsResponse)
+
+	if !w.firstSent {
+		w.firstSent = true
+		if w.autoSchema && resp.TableSchema == nil {
+			resp.TableSchema = &btpb.TableSchema{}
+		}
+	}
+	return w.Bigtable_TypedReadRowsServer.Send(resp)
+}
+
+func (s *Server) TypedReadRows(req *btpb.TypedReadRowsRequest, srv btpb.Bigtable_TypedReadRowsServer) error {
+	wrappedSrv := &typedReadRowsServerWrapper{
+		Bigtable_TypedReadRowsServer: srv,
+		autoSchema:                   !s.DisableTypedReadRowsAutoSchema,
+	}
+	if s.TypedReadRowsFn != nil {
+		return s.TypedReadRowsFn(req, wrappedSrv)
+	}
+	return status.Error(codes.Unimplemented, "unimplemented - you need to attach a TypedReadRowsFn to the server")
 }

@@ -288,6 +288,31 @@ type prepareQueryAction struct {
 
 func (a *prepareQueryAction) Validate() {}
 
+// typedReadRowsAction denotes an error or a response in the response stream for a TypedReadRows request.
+// Usage:
+//  1. typedReadRowsAction{response: res}
+//     Effect: server will return response, and there may be more to come.
+//  2. typedReadRowsAction{response: res, delayStr: delay}
+//     Effect: server will return the response after delay, and there may be more to come.
+//  3. typedReadRowsAction{rpcError: error}
+//     Effect: server will return an error. response specified in the same action will be ignored.
+//  4. typedReadRowsAction{rpcError: error, delayStr: delay}
+//     Effect: server will return an error after delay. response specified in the same action will be ignored.
+//  5. typedReadRowsAction{rpcError: error, routingCookie: cookie}
+//     Effect: server will return an error with the routing cookie. Retry attempt header should have this cookie.
+//  6. typedReadRowsAction{rpcError: error, retryInfo: delay}
+//     Effect: server will return an error with RetryInfo which has the specific delay.
+//  7. To have a response stream with/without errors, a sequence of actions should be constructed.
+type typedReadRowsAction struct {
+	response      *btpb.TypedReadRowsResponse
+	rpcError      codes.Code
+	delayStr      string // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	routingCookie string
+	retryInfo     string // "" means no RetryInfo will be attached in the error status
+}
+
+func (a *typedReadRowsAction) Validate() {}
+
 // readRowsReqRecord allows the mock server to record the received ReadRowsRequest with timestamp.
 type readRowsReqRecord struct {
 	req *btpb.ReadRowsRequest
@@ -352,11 +377,20 @@ type prepareQueryReqRecord struct {
 
 func (r *prepareQueryReqRecord) GetTs() time.Time { return r.ts }
 
+// typedReadRowsReqRecord allows the mock server to record the received TypedReadRowsRequest with timestamp.
+type typedReadRowsReqRecord struct {
+	req *btpb.TypedReadRowsRequest
+	ts  time.Time
+}
+
+func (r *typedReadRowsReqRecord) GetTs() time.Time { return r.ts }
+
 // anyRequest is an interface type that works for the request types of test proxy.
 type anyRequest interface {
 	*testproxypb.ReadRowRequest | *testproxypb.ReadRowsRequest | *testproxypb.MutateRowRequest |
 		*testproxypb.MutateRowsRequest | *testproxypb.SampleRowKeysRequest |
-		*testproxypb.CheckAndMutateRowRequest | *testproxypb.ReadModifyWriteRowRequest | *testproxypb.ExecuteQueryRequest
+		*testproxypb.CheckAndMutateRowRequest | *testproxypb.ReadModifyWriteRowRequest | *testproxypb.ExecuteQueryRequest |
+		*testproxypb.TypedReadRowsRequest
 	GetClientId() string
 }
 
@@ -364,21 +398,24 @@ type anyRequest interface {
 type anyResult interface {
 	*testproxypb.RowResult | *testproxypb.RowsResult | *testproxypb.MutateRowResult |
 		*testproxypb.MutateRowsResult | *testproxypb.SampleRowKeysResult |
-		*testproxypb.CheckAndMutateRowResult | *testproxypb.ExecuteQueryResult
+		*testproxypb.CheckAndMutateRowResult | *testproxypb.ExecuteQueryResult |
+		*testproxypb.TypedRowsResult
 	GetStatus() *status.Status
 }
 
 // anyRecord is an interface type that works for the record types defined above.
 type anyRecord interface {
 	*readRowsReqRecord | *sampleRowKeysReqRecord | *mutateRowReqRecord | *mutateRowsReqRecord |
-		*checkAndMutateRowReqRecord | *readModifyWriteRowReqRecord | *executeQueryReqRecord | *prepareQueryReqRecord
+		*checkAndMutateRowReqRecord | *readModifyWriteRowReqRecord | *executeQueryReqRecord | *prepareQueryReqRecord |
+		*typedReadRowsReqRecord
 	GetTs() time.Time
 }
 
 // anyAction is an interface type that works for the action types of mock server, except for sampleRowKeysAction.
 type anyAction interface {
 	*readRowsAction | *mutateRowAction | *mutateRowsAction |
-		*checkAndMutateRowAction | *readModifyWriteRowAction | *executeQueryAction | *prepareQueryAction
+		*checkAndMutateRowAction | *readModifyWriteRowAction | *executeQueryAction | *prepareQueryAction |
+		*typedReadRowsAction
 	Validate()
 }
 

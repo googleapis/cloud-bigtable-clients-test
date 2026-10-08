@@ -657,6 +657,71 @@ func doExecuteQueryOpsCore(
 	return results
 }
 
+// doTypedReadRowsOp is a simple wrapper of doTypedReadRowsOps. It's useful when there is only one TypedReadRows
+// operation to perform. A single result will be returned, where nil value indicates proxy
+// failure (not client's).
+func doTypedReadRowsOp(
+	t *testing.T,
+	s *Server,
+	req *testproxypb.TypedReadRowsRequest,
+	opts *clientOpts) *testproxypb.TypedRowsResult {
+
+	results := doTypedReadRowsOps(t, s, []*testproxypb.TypedReadRowsRequest{req}, opts)
+	return results[0]
+}
+
+// doTypedReadRowsOps performs TypedReadRows operations in parallel, using the test proxy requests `reqs` and
+// the mock server `s`. Non-nil `opts` will override the default client settings including app
+// profile id and timeout. The results will be returned, where the i-th result corresponds to the
+// i-th request. nil element indicates proxy failure (not client's).
+// Note that the function manages the setup and teardown of resources.
+func doTypedReadRowsOps(
+	t *testing.T,
+	s *Server,
+	reqs []*testproxypb.TypedReadRowsRequest,
+	opts *clientOpts) []*testproxypb.TypedRowsResult {
+
+	clientID := reqs[0].GetClientId()
+	setUp(t, s, clientID, opts)
+	defer tearDown(t, s, clientID)
+
+	return doTypedReadRowsOpsCore(t, clientID, reqs, nil)
+}
+
+// doTypedReadRowsOpsCore does the work of sending concurrent requests to test proxy and collecting the
+// results, where the i-th result corresponds to the i-th request. nil element indicates proxy
+// failure (not client's). Non-nil `closeCbtClientAfter` will trigger Cloud Bigtable client being
+// closed after sending off all the requests (>=1s delay should ensure the requests are already
+// sent off when the client is closed).
+// Note that the function doesn't manage the setup and teardown of resources.
+func doTypedReadRowsOpsCore(
+	t *testing.T,
+	clientID string,
+	reqs []*testproxypb.TypedReadRowsRequest,
+	closeCbtClientAfter *time.Duration) []*testproxypb.TypedRowsResult {
+
+	validateClientID(t, reqs, clientID)
+
+	// Ask the CBT client to do TypedReadRows via the test proxy
+	var wg sync.WaitGroup
+	results := make([]*testproxypb.TypedRowsResult, len(reqs))
+	for i := range reqs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			res, err := testProxyClient.TypedReadRows(context.Background(), reqs[i])
+			fillResults(t, results, res, err, i)
+		}(i)
+	}
+	if closeCbtClientAfter != nil {
+		time.Sleep(*closeCbtClientAfter)
+		closeCbtClient(t, clientID)
+	}
+	wg.Wait()
+
+	return results
+}
+
 // checkResultOkStatus checks if the results have ok status. The result type can be any of those
 // supported by the test proxy.
 func checkResultOkStatus[R anyResult](t *testing.T, results ...R) {
