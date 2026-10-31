@@ -749,6 +749,8 @@ func TestExecuteQuery_FailsOnExecuteQueryMetadata(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"Response contains unknown type metadata",
+		// Go error message
+		"bigtable: unexpected response type",
 	})
 }
 
@@ -783,6 +785,8 @@ func TestExecuteQuery_FailsOnInvalidType(t *testing.T) {
 		"Unrecognized response data type",
 		// Nodejs error message
 		"Type undefined not supported by current client version",
+		// Go error message
+		"unrecognized response type kind",
 	})
 }
 
@@ -822,6 +826,8 @@ func TestExecuteQuery_FailsOnNotEnoughData(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"received incomplete row",
+		// Go error message
+		"bigtable: metadata and data mismatch",
 	})
 }
 
@@ -862,6 +868,8 @@ func TestExecuteQuery_FailsOnNotEnoughDataWithCompleteRows(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"received incomplete row",
+		// Go error message
+		"bigtable: metadata and data mismatch",
 	})
 }
 
@@ -901,6 +909,8 @@ func TestExecuteQuery_FailsOnTypeMismatch(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"Metadata and Value not matching",
+		// Go error message
+		"type mismatch: expected StringValue for StringType",
 	})
 }
 
@@ -940,6 +950,8 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinMap(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"Metadata and Value not matching",
+		// Go error message
+		"type mismatch: expected IntValue for Int64Type",
 	})
 }
 
@@ -979,6 +991,8 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinArray(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"Metadata and Value not matching",
+		// Go error message
+		"type mismatch: expected StringValue for StringType",
 	})
 }
 
@@ -1019,6 +1033,8 @@ func TestExecuteQuery_FailsOnTypeMismatchWithinStruct(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"Metadata and Value not matching",
+		// Go error message
+		"type mismatch: expected IntValue for Int64Type",
 	})
 }
 
@@ -1058,6 +1074,8 @@ func TestExecuteQuery_FailsOnStructMissingField(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"received Struct with 1 values, but metadata has 2 fields",
+		// Go error message
+		"struct data/schema mismatch",
 	})
 }
 
@@ -2065,6 +2083,8 @@ func TestExecuteQuery_ChecksumMismatch(t *testing.T) {
 		"InvalidExecuteQueryResponse",
 		// Nodejs error message
 		"Failed to validate next batch of results",
+		// Go error message
+		"bigtable: batch_checksum mismatch",
 	})
 }
 
