@@ -20,6 +20,7 @@ package tests
 import (
 	"context"
 	"encoding/binary"
+	"math"
 	"net/url"
 	"strings"
 	"testing"
@@ -191,6 +192,38 @@ func TestReadModifyWriteRow_NoRetry_MultiValues(t *testing.T) {
 	assert.Equal(t, rowKey, res.Row.Key)
 	assert.Equal(t, 10+2, int(binary.BigEndian.Uint64(res.Row.Families[0].Columns[0].Cells[0].Value)))
 	assert.Equal(t, "str1"+"str2", string(res.Row.Families[0].Columns[1].Cells[0].Value))
+}
+
+// TestReadModifyWriteRow_NoRetry_MinInt64 tests that client can increment by MinInt64 (-2^63).
+func TestReadModifyWriteRow_NoRetry_MinInt64(t *testing.T) {
+	// 0. Common variables
+	increments := []int64{math.MinInt64}
+	rowKey := []byte("row-01")
+	clientReq := dummyReadModifyWriteRowRequest("table", rowKey, increments, nil)
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *readModifyWriteRowReqRecord, 1)
+	action := &readModifyWriteRowAction{row: dummyResultRow(rowKey, increments, nil)}
+	server := initMockServer(t)
+	server.ReadModifyWriteRowFn = mockReadModifyWriteRowFnSimple(recorder, action)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.ReadModifyWriteRowRequest{
+		ClientId: t.Name(),
+		Request:  clientReq,
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doReadModifyWriteRowOp(t, server, &req, nil)
+
+	// 4. Check that the dummy request is sent and the dummy row is returned
+	checkResultOkStatus(t, res)
+	loggedReq := <-recorder
+	if diff := cmp.Diff(clientReq, loggedReq.req, protocmp.Transform()); diff != "" {
+		t.Errorf("diff found (-want +got):\n%s", diff)
+	}
+	assert.Equal(t, rowKey, res.Row.Key)
+	assert.Equal(t, int64(math.MinInt64), int64(binary.BigEndian.Uint64(res.Row.Families[0].Columns[0].Cells[0].Value)))
 }
 
 // TestReadModifyWriteRow_Generic_MultiStreams tests that client can have multiple concurrent streams.
