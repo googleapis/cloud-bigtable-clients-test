@@ -31,6 +31,7 @@ import (
 	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/runtime/protoiface"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -194,11 +195,12 @@ type entryData struct {
 //  10. "endOfStream = true" is not needed if there are no subsequent actions for a request.
 type mutateRowsAction struct {
 	data          entryData
-	endOfStream   bool       // If set, server will conclude the serving for the request.
-	rpcError      codes.Code // The error is not specific to a particular row (we use entryData instead).
-	delayStr      string     // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
+	endOfStream   bool                   // If set, server will conclude the serving for the request.
+	rpcError      codes.Code             // The error is not specific to a particular row (we use entryData instead).
+	delayStr      string                 // "" means zero delay; follow https://pkg.go.dev/time#ParseDuration otherwise
 	routingCookie string
-	retryInfo     string // "" means no RetryInfo will be attached in the error status
+	retryInfo     string                 // "" means no RetryInfo will be attached in the error status
+	errorDetails  []protoiface.MessageV1 // Additional error details to attach to the error status
 }
 
 func (a *mutateRowsAction) Validate() {}

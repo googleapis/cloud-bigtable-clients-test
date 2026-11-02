@@ -424,13 +424,18 @@ func mockMutateRowsFnWithMetadata(recorder chan<- *mutateRowsReqRecord, mdRecord
 					trailer := metadata.Pairs("x-goog-cbt-cookie-test", action.routingCookie)
 					srv.SetTrailer(trailer)
 				}
-				if action.retryInfo != "" {
+				if action.retryInfo != "" || len(action.errorDetails) > 0 {
 					st := gs.New(action.rpcError, "MutateRows failed")
-					delay, _ := time.ParseDuration(action.retryInfo)
-					retryInfo := &errdetails.RetryInfo{
-						RetryDelay: drpb.New(delay),
+					if action.retryInfo != "" {
+						delay, _ := time.ParseDuration(action.retryInfo)
+						retryInfo := &errdetails.RetryInfo{
+							RetryDelay: drpb.New(delay),
+						}
+						st, err = st.WithDetails(retryInfo)
 					}
-					st, err = st.WithDetails(retryInfo)
+					if len(action.errorDetails) > 0 {
+						st, err = st.WithDetails(action.errorDetails...)
+					}
 					return st.Err()
 				}
 				return gs.Error(action.rpcError, "MutateRows failed")
