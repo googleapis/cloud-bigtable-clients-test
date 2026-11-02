@@ -622,3 +622,33 @@ func TestMutateRows_NoRetry_ErrorNotificationParity(t *testing.T) {
 	assert.Equal(t, int64(1), res.GetEntries()[0].GetIndex())
 	assert.Equal(t, int32(codes.PermissionDenied), res.GetEntries()[0].GetStatus().GetCode())
 }
+
+// TestMutateRows_NoRetry_WithRetryInfo tests that client handles non-retryable MutateRows RPC failure with RetryInfo in error details.
+func TestMutateRows_NoRetry_WithRetryInfo(t *testing.T) {
+	// 0. Common variables
+	const numRows int = 2
+	const numRPCs int = 1
+	const tableID string = "table"
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *mutateRowsReqRecord, numRPCs+1)
+	mdRecorder := make(chan metadata.MD, numRPCs+1)
+	action := &mutateRowsAction{rpcError: codes.PermissionDenied, retryInfo: "2s"}
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFnWithMetadata(recorder, mdRecorder, []*mutateRowsAction{action})
+
+	// 2. Build the request to test proxy
+	req := testproxypb.MutateRowsRequest{
+		ClientId: t.Name(),
+		Request:  dummyMutateRowsRequest(tableID, numRows),
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doMutateRowsOp(t, server, &req, nil)
+
+	// 4a. Check the number of requests in the recorder (no retry)
+	assert.Equal(t, numRPCs, len(recorder))
+
+	// 4b. Check that the operation returned PermissionDenied status
+	assert.Equal(t, int32(codes.PermissionDenied), res.GetStatus().GetCode())
+}
