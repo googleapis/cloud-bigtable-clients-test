@@ -29,9 +29,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/runtime/protoiface"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -621,4 +623,47 @@ func TestMutateRows_NoRetry_ErrorNotificationParity(t *testing.T) {
 	assert.Equal(t, 1, len(res.GetEntries()))
 	assert.Equal(t, int64(1), res.GetEntries()[0].GetIndex())
 	assert.Equal(t, int32(codes.PermissionDenied), res.GetEntries()[0].GetStatus().GetCode())
+}
+
+// TestMutateRows_NoRetry_WithErrorDetails tests that client handles non-retryable MutateRows RPC failure with ErrorDetails.
+func TestMutateRows_NoRetry_WithErrorDetails(t *testing.T) {
+	// 0. Common variables
+	const numRows int = 2
+	const numRPCs int = 1
+	const tableID string = "table"
+
+	// 1. Instantiate the mock server
+	recorder := make(chan *mutateRowsReqRecord, numRPCs+1)
+	action := &mutateRowsAction{
+		rpcError: codes.PermissionDenied,
+		errorDetails: []protoiface.MessageV1{
+			&errdetails.ErrorInfo{
+				Reason: "IAM_PERMISSION_DENIED",
+				Domain: "bigtable.googleapis.com",
+			},
+			&errdetails.DebugInfo{
+				Detail: "permission denied detail",
+			},
+		},
+	}
+	server := initMockServer(t)
+	server.MutateRowsFn = mockMutateRowsFnSimple(recorder, action)
+
+	// 2. Build the request to test proxy
+	req := testproxypb.MutateRowsRequest{
+		ClientId: t.Name(),
+		Request:  dummyMutateRowsRequest(tableID, numRows),
+	}
+
+	// 3. Perform the operation via test proxy
+	res := doMutateRowsOp(t, server, &req, nil)
+
+	// 4a. Check the number of requests in the recorder (no retry)
+	assert.Equal(t, numRPCs, len(recorder))
+
+	// 4b. Check that the operation returned PermissionDenied status
+	assert.Equal(t, int32(codes.PermissionDenied), res.GetStatus().GetCode())
+	for _, entry := range res.GetEntries() {
+		assert.Equal(t, int32(codes.PermissionDenied), entry.GetStatus().GetCode())
+	}
 }
